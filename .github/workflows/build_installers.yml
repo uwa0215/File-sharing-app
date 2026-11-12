@@ -1,0 +1,102 @@
+name: Build DeviceBridge Installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  build_windows:
+    name: Windows Installer (.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Download Android sidecars (scrcpy + adb)
+        shell: pwsh
+        run: |
+          $rel = Invoke-RestMethod "https://api.github.com/repos/Genymobile/scrcpy/releases/latest"
+          $asset = $rel.assets | Where-Object { $_.name -match "scrcpy-win64-.*\.zip$" } | Select-Object -First 1
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile scrcpy.zip
+          Expand-Archive scrcpy.zip -DestinationPath scrcpy_tmp -Force
+          $inner = Get-ChildItem scrcpy_tmp -Directory | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path windows_host/native_tools/android | Out-Null
+          Copy-Item "$($inner.FullName)\*" windows_host/native_tools/android/ -Recurse -Force
+      - name: Build Flutter Windows Release
+        working-directory: windows_host
+        run: |
+          flutter pub get
+          flutter build windows --release
+      - name: Build Inno Setup Installer
+        working-directory: windows_host
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "installer\devicebridge.iss"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: windows_host/build/installer/DeviceBridge-Windows-1.0.0-Setup.exe
+
+  build_android:
+    name: Android APK (.apk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Build Android Release APK
+        working-directory: mobile_companion
+        run: |
+          flutter pub get
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk DeviceBridge-Android-1.0.0.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-android
+          path: mobile_companion/DeviceBridge-Android-1.0.0.apk
+
+  build_ios:
+    name: iOS Unsigned IPA (.ipa)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Build Unsigned iOS Archive
+        working-directory: mobile_companion
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign
+          mkdir -p build/ios/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa && zip -r DeviceBridge-iOS-1.0.0-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-ios
+          path: mobile_companion/build/ios/ipa/DeviceBridge-iOS-1.0.0-unsigned.ipa
+
+  package_all:
+    name: Combine All Installers into dist/
+    needs: [build_windows, build_android, build_ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeviceBridge-All-Installers
+          path: dist/*

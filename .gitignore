@@ -1,0 +1,30 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+build/
+**/build/
+**/.dart_tool/
+**/ephemeral/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Build outputs & downloaded sidecar binaries
+dist/
+windows_host/native_tools/android/*.exe
+windows_host/native_tools/android/*.dll
+windows_host/native_tools/android/scrcpy-server
+windows_host/native_tools/android/*.png
+windows_host/native_tools/android/*.bat
+windows_host/native_tools/android/*.vbs
+windows_host/native_tools/android/LICENSE.txt
+windows_host/native_tools/ios/*.exe
+windows_host/native_tools/ios/*.dll
+windows_host/native_tools/airplay/*.exe
+windows_host/native_tools/airplay/*.dll
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+.DS_Store
