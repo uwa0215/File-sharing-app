@@ -1,127 +1,77 @@
-# DeviceBridge User Guide
+# DeviceBridge USB User Guide (Windows Only)
 
-Welcome to **DeviceBridge** — a fast, native file-sharing and screen-mirroring bridge between your **Windows laptop** and your **Android** or **iPhone / iPad** devices.
+Welcome to **DeviceBridge USB** — a native Windows desktop application for reading, browsing, mirroring, and transferring files with your **Android** or **iPhone / iPad** simply by plugging in a **USB cable**.
 
-![DeviceBridge Overview](images/01-overview.jpg)
-
----
-
-## Step 1: Install DeviceBridge on Your Devices
-
-1. **Windows Laptop:** Run `DeviceBridge-Windows-1.0.0-Setup.exe` and finish the setup wizard, then open **DeviceBridge** from the Start Menu or Desktop shortcut.
-2. **Android Phone / Tablet:** Copy `DeviceBridge-Android-1.0.0.apk` to your phone, tap it, and allow **"Install unknown apps"** if prompted. Open **DeviceBridge Companion**.
-3. **iPhone / iPad:** Install `DeviceBridge-iOS-1.0.0-unsigned.ipa` (signed with your Apple ID via AltStore, Sideloadly, or Xcode). Open **DeviceBridge Companion**.
-
-> **Important:** When you first open **DeviceBridge Companion** on your phone, allow any **Notifications**, **Photos / Media**, and **Local Network** permission prompts so transfers can save properly and alert you when finished.
+**No mobile app installation is required on your phone.**
 
 ---
 
-## Step 2: Choose How to Connect Your Device
+## Step 1: Install DeviceBridge on Windows
 
-DeviceBridge supports both **Wi-Fi (no cables)** and **USB Cable (no Wi-Fi needed)**.
-
-### Option A: Connect an Android Phone over Wi-Fi (Easiest)
-
-1. Make sure your **Windows laptop** and **Android phone** are on the **same Wi-Fi network**.
-2. Open **DeviceBridge Companion** on your Android phone.
-   - Check that the status card says **`Listening on port 49152`** and **`mDNS Active`**.
-3. Open **DeviceBridge** on your Windows laptop.
-4. Look at the connection card on the right — your phone will appear automatically as a clickable chip labeled **`<Phone Name> • Wi-Fi (mDNS)`**.
-5. Click that chip (or click **Connect**). Once connected, the header turns green/teal and shows **`Connected: <Phone Name> (android)`**.
+1. Download and run `DeviceBridge-Windows-1.0.0-Setup.exe`.
+2. Complete the Windows Setup Wizard and open **DeviceBridge USB** from the Start Menu or Desktop shortcut.
 
 ---
 
-### Option B: Connect an Android Phone via USB Cable (+ Live Screen Mirroring)
+## Step 2: Plug In Your Phone via USB
 
-Use a USB cable when Wi-Fi is unavailable, slow, or blocked (like on public/office Wi-Fi).
+DeviceBridge monitors USB ports automatically — no IP addresses or pairing codes needed.
 
-![Android USB Connection Guide](images/02-android-usb-setup.jpg)
+### Option A: Android Phone (Automatic MTP — No Settings Required)
 
-1. **Turn on USB Debugging on your Android phone (one-time setup):**
-   - Open **Settings -> About phone -> Software information**.
-   - Tap **Build number** **7 times** until you see *"You are now a developer!"*.
-   - Go back to **Settings -> Developer options** and turn **USB debugging** **ON**.
-2. **Plug your Android phone into your Windows laptop** using a data-capable USB cable.
-3. On your phone screen, tap **Allow** on the **"Allow USB debugging?"** pop-up (check *Always allow from this computer* for convenience).
-4. Open **DeviceBridge Companion** on the phone and **DeviceBridge** on Windows.
-5. In the Windows app, click the **`<Phone Model> (USB) • USB (ADB)`** chip and click **Connect**.
-6. *(Optional)* Click the **Mirror** button at the top of the left **Mirror & Drop** panel to view your live Android screen directly inside DeviceBridge!
-   - You can click **Pop out mirror** / **Dock mirror** to detach or re-attach the live phone screen.
+1. Connect your Android phone to your Windows laptop using a data-capable USB cable.
+2. Unlock your phone. If Android shows a USB notification saying *Charging this device via USB*, tap it and choose **File Transfer / Android Auto (MTP)**.
+3. **DeviceBridge USB** detects your phone automatically in the top **USB Connected** bar and opens its storage folders in **Phone Explorer** on the right.
 
----
+### Option B: Android Phone with Full `/sdcard` Access + Live Screen Mirroring (ADB)
 
-### Option C: Connect an iPhone or iPad over Wi-Fi
+1. *(One-time setup)* Enable **USB Debugging** on Android (**Settings -> About phone -> tap Build number 7 times -> Developer options -> USB debugging**).
+2. Plug in your USB cable and tap **Allow** on *"Allow USB debugging?"*.
+3. DeviceBridge automatically connects via **`USB (ADB • Full Storage)`**, unlocking:
+   - Instant quick-jump buttons (`DCIM`, `Download`, `Pictures`, `Documents`)
+   - High-speed USB file transfers both ways
+   - **Mirror** button on the left panel to view & control your live Android screen inside DeviceBridge (`scrcpy`).
 
-![iPhone & iPad Connection Guide](images/03-ios-setup-guide.jpg)
+### Option C: iPhone or iPad (Photos & Videos — No iOS App Needed)
 
-1. Make sure your **Windows laptop** and **iPhone / iPad** are on the **same Wi-Fi network**.
-2. Open **DeviceBridge Companion** on your iPhone/iPad.
-   - Tap **Allow** if iOS asks *"DeviceBridge would like to find and connect to devices on your local network."*
-   - Confirm the status card shows **`Listening on port 49152`**.
-3. Open **DeviceBridge** on your Windows laptop.
-4. Click the **`<iPhone Name> • Wi-Fi (mDNS)`** chip that appears in the connection card.
-5. Received files are automatically saved to the built-in Apple **Files** app under:
-   **`Files -> Browse -> On My iPhone -> DeviceBridge`**.
+1. Make sure **Apple Mobile Device Support** / **iTunes** or **Apple Devices** drivers are installed on Windows.
+2. Plug your iPhone or iPad into your Windows laptop with a USB cable.
+3. Unlock the iPhone/iPad and tap **Trust** on *"Trust This Computer?"*.
+4. DeviceBridge automatically mounts your iPhone under **`USB (Apple PTP • Photos & Videos)`** and opens **`Internal Storage -> DCIM`**.
+
+> **Note for iPhone / iPad:** Apple allows reading and copying **photos & videos (`DCIM`)** from iPhone to Windows over USB PTP, but blocks writing arbitrary files back onto the iPhone over USB PTP.
 
 ---
 
-### Option D: Connect an iPhone or iPad via USB Cable (+ Optional AirPlay Mirroring)
+## Step 3: Drag Files Between Your Phone and Windows
 
-1. On your Windows laptop, ensure **Apple Mobile Device Support** (included with iTunes or Apple Devices) and **Bonjour** are installed.
-2. Place `iproxy.exe` (with `libimobiledevice` DLLs) in the app's `tools/ios/` folder, and optionally `uxplay.exe` in `tools/airplay/` for AirPlay screen mirroring. *(Click the wrench/tools icon in the **Mirror & Drop** header to verify which sidecar tools are detected.)*
-3. Plug your iPhone/iPad into the Windows laptop via USB and tap **Trust** on **"Trust This Computer?"**.
-4. Open **DeviceBridge Companion** on the iPhone/iPad, then click **`iPhone / iPad (USB Tunnel) • USB (usbmuxd)`** in Windows **DeviceBridge**.
-5. For AirPlay screen mirroring (when `uxplay.exe` is installed), click **Mirror** on Windows, then swipe open **Control Center -> Screen Mirroring -> DeviceBridge** on your iPhone/iPad.
+### Copy / Drag Files FROM Your Phone TO Windows
 
----
+> **Important:** Do **not** try to drag files directly off the mirrored phone screen (`scrcpy`) on the left — the mirror only displays your phone screen. Always use **Phone Explorer** on the right!
 
-### Option E: Manual IP Connection (Fallback)
+1. Look at **Phone Explorer** on the **right side** of DeviceBridge.
+2. Click any folder (for example **`DCIM` -> `Camera`** or **`100APPLE`**) to open it.
+3. Move files to Windows using any of these three ways:
+   - **Drag & Drop:** Click and drag any file row directly out of **Phone Explorer** onto your **Windows Desktop** or into an open **File Explorer** folder.
+   - **Single File Save:** Click the **`Save` (`↓`)** button on the right side of any file row.
+   - **Bulk Export:** Check the boxes next to multiple photos/files, then click **`Export Selected to PC`** to save them all into one folder at once.
 
-If your router or guest Wi-Fi blocks automatic discovery (`mDNS`):
+### Send Files or Folders FROM Windows TO Your Android Phone
 
-1. Look at the **LAN IPs** line in **DeviceBridge Companion** on your phone (for example, `192.168.1.42:49152`).
-2. On your Windows laptop, type `192.168.1.42` into **Host / IP**, keep **Port** as `49152`, and click **Connect**.
-3. If using a USB tunnel (`adb` or `iproxy`), use `127.0.0.1` and port `49152`.
-
----
-
-## Step 3: Sending and Receiving Files
-
-![DeviceBridge Drag and Drop Workflow](images/04-drag-and-drop-workflow.jpg)
-
-### Send Files or Folders from Windows to Your Phone
-- **Drag & Drop:** Drag any file, multiple files, or an entire folder from **Windows File Explorer** straight onto the phone-shaped **Mirror & Drop** panel on the left.
-- **Or File Picker:** Click the **Select Files** button inside the **Mirror & Drop** panel to browse and send files.
-- Watch live progress in the **Transfer Queue** tab. Every file is verified with a **SHA-256 checksum** automatically before completing.
-
-### Copy Files from Your Phone Back to Windows
-1. Click the **Phone Files** tab on the right side of the Windows app.
-2. Browse folders (click a folder to open it, or click the up-arrow to go back).
-3. Either:
-   - **Drag a file row** directly out of **Phone Files** onto your **Windows Desktop** or into an open File Explorer window, **or**
-   - Click the **Download (`↓`)** icon on the right side of any file row to choose where to save it on your PC.
-
----
-
-## Where Received Files Are Stored on Your Phone
-
-| Device | Where Files Appear |
-| :--- | :--- |
-| **Android** | Photos in **Gallery / Pictures (`DeviceBridge`)**, Videos in **Movies (`DeviceBridge`)**, Audio in **Music (`DeviceBridge`)**, and PDFs/documents/ZIPs in **Downloads (`DeviceBridge`)**. |
-| **iPhone / iPad** | Native **Files** app -> **On My iPhone** (or **On My iPad**) -> **DeviceBridge** folder. |
+1. *(Optional)* In **Phone Explorer** on the right, open the destination folder where you want the files saved (for example `Download` or `Pictures`).
+2. Drag any file(s) or folder(s) from **Windows File Explorer** and drop them onto **either**:
+   - The phone-shaped **Mirror & Send to Phone** panel on the left, **or**
+   - Directly onto the **Phone Explorer** list on the right.
+   - *(Or click **Select PC Files to Send** on the left panel.)*
+3. Progress and completion appear in the **USB Transfers** bar at the bottom right.
 
 ---
 
 ## Troubleshooting
 
-- **Phone does not appear automatically over Wi-Fi:**
-  - Verify both devices are on the same Wi-Fi (not a guest network with client isolation).
-  - Allow `windows_host.exe` (DeviceBridge) through **Windows Defender Firewall** on Private networks (TCP port `49152` and mDNS UDP `5353`).
-  - Use **Option E (Manual IP)** with the IP shown inside **DeviceBridge Companion**.
-- **Android USB chip does not show up:**
-  - Confirm you used a data USB cable (some charging-only cables lack data wires).
-  - Re-check **USB debugging** in Android **Developer options** and accept the **"Allow USB debugging?"** prompt.
-  - Click the **Native Sidecar Tools** button in the top-left of **Mirror & Drop** to verify `adb.exe` and `scrcpy.exe` show green checkmarks.
-- **Connection drops mid-transfer:**
-  - Keep **DeviceBridge Companion** open in the foreground on your phone during large multi-gigabyte transfers so the mobile OS does not suspend background sockets.
-
+- **Phone does not show up when plugged in:**
+  - Try a different USB cable or USB port (some charging-only cables lack data wires).
+  - **Android:** Unlock the screen and change USB mode to **File Transfer (MTP)**, or accept **Allow USB debugging**.
+  - **iPhone / iPad:** Unlock the screen, unplug/replug, tap **Trust**, and verify Windows recognizes it in File Explorer (`This PC -> Apple iPhone`).
+- **`Mirror` does not start for Android:**
+  - Make sure **USB Debugging** is enabled and allowed on the phone. Click the wrench icon in the top-right corner of DeviceBridge to confirm `adb.exe` and `scrcpy.exe` are detected.

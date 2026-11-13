@@ -4,9 +4,9 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:ffi/ffi.dart';
-import 'package:shared_protocol/shared_protocol.dart';
 import 'package:win32/win32.dart';
 
+import '../models/usb_device_models.dart';
 import 'native_tools_locator.dart';
 
 enum MirrorState { idle, starting, running, error }
@@ -20,7 +20,7 @@ class MirrorStatus {
   });
 
   final MirrorState state;
-  final DevicePlatform? platform;
+  final MobileOs? platform;
   final bool docked;
   final String? message;
 }
@@ -39,7 +39,7 @@ class MirrorProcessManager {
   int? _hostHwnd;
   bool _docked = true;
   Rect? _lastBounds;
-  DevicePlatform? _activePlatform;
+  MobileOs? _activePlatform;
 
   final StreamController<MirrorStatus> _statusController =
       StreamController<MirrorStatus>.broadcast();
@@ -50,7 +50,7 @@ class MirrorProcessManager {
 
   /// Starts mirroring for [platform] (`android` -> `scrcpy`, `ios` -> `uxplay`).
   Future<void> startMirror({
-    required DevicePlatform platform,
+    required MobileOs platform,
     String? androidSerial,
     Rect? viewportRect,
     bool dockInsideViewport = true,
@@ -60,9 +60,9 @@ class MirrorProcessManager {
     _lastBounds = viewportRect;
     _activePlatform = platform;
 
-    if (platform == DevicePlatform.android) {
+    if (platform == MobileOs.android) {
       await _startScrcpy(serial: androidSerial);
-    } else if (platform == DevicePlatform.ios) {
+    } else if (platform == MobileOs.ios) {
       await _startUxPlay();
     } else {
       _emit(
@@ -80,7 +80,7 @@ class MirrorProcessManager {
       _emit(
         const MirrorStatus(
           state: MirrorState.error,
-          platform: DevicePlatform.android,
+          platform: MobileOs.android,
           message:
               'scrcpy.exe not found. Place scrcpy files in native_tools/android/ (or tools/android/).',
         ),
@@ -91,7 +91,7 @@ class MirrorProcessManager {
     _emit(
       const MirrorStatus(
         state: MirrorState.starting,
-        platform: DevicePlatform.android,
+        platform: MobileOs.android,
         message: 'Starting scrcpy mirror...',
       ),
     );
@@ -115,19 +115,19 @@ class MirrorProcessManager {
           _emit(
             MirrorStatus(
               state: MirrorState.idle,
-              platform: DevicePlatform.android,
+              platform: MobileOs.android,
               message: 'Mirror stopped (exit $code)',
             ),
           );
         }
       }));
 
-      await _attachWindowWhenReady(_scrcpyWindowTitle, DevicePlatform.android);
+      await _attachWindowWhenReady(_scrcpyWindowTitle, MobileOs.android);
     } catch (e) {
       _emit(
         MirrorStatus(
           state: MirrorState.error,
-          platform: DevicePlatform.android,
+          platform: MobileOs.android,
           message: 'Failed to launch scrcpy: $e',
         ),
       );
@@ -140,7 +140,7 @@ class MirrorProcessManager {
       _emit(
         const MirrorStatus(
           state: MirrorState.error,
-          platform: DevicePlatform.ios,
+          platform: MobileOs.ios,
           message:
               'uxplay.exe not found. Place UxPlay + GStreamer in native_tools/airplay/ and ensure Apple Bonjour Service is installed.',
         ),
@@ -151,7 +151,7 @@ class MirrorProcessManager {
     _emit(
       const MirrorStatus(
         state: MirrorState.starting,
-        platform: DevicePlatform.ios,
+        platform: MobileOs.ios,
         message: 'Starting AirPlay receiver (DeviceBridge)...',
       ),
     );
@@ -169,7 +169,7 @@ class MirrorProcessManager {
           _emit(
             MirrorStatus(
               state: MirrorState.idle,
-              platform: DevicePlatform.ios,
+              platform: MobileOs.ios,
               message: 'AirPlay stopped (exit $code)',
             ),
           );
@@ -179,7 +179,7 @@ class MirrorProcessManager {
       _emit(
         const MirrorStatus(
           state: MirrorState.running,
-          platform: DevicePlatform.ios,
+          platform: MobileOs.ios,
           docked: false,
           message: 'AirPlay receiver ready — select "DeviceBridge" in iOS Screen Mirroring',
         ),
@@ -188,7 +188,7 @@ class MirrorProcessManager {
       _emit(
         MirrorStatus(
           state: MirrorState.error,
-          platform: DevicePlatform.ios,
+          platform: MobileOs.ios,
           message: 'Failed to launch UxPlay: $e',
         ),
       );
@@ -197,7 +197,7 @@ class MirrorProcessManager {
 
   Future<void> _attachWindowWhenReady(
     String windowTitle,
-    DevicePlatform platform,
+    MobileOs platform,
   ) async {
     if (!Platform.isWindows) return;
 

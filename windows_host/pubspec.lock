@@ -17,54 +17,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.1"
-  bonsoir:
-    dependency: "direct main"
-    description:
-      name: bonsoir
-      sha256: "5a16185a921039a6cc6544e5f6539c989e8d8a7dc3b219a3bcbd583b1cb302f7"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.1.6"
-  bonsoir_android:
-    dependency: transitive
-    description:
-      name: bonsoir_android
-      sha256: "543689dae95e8d4df3576afadd1f8a343e0c2760ae44e5095959d870cfbcb7d3"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.1.4"
-  bonsoir_darwin:
-    dependency: transitive
-    description:
-      name: bonsoir_darwin
-      sha256: "5fceef2e607db0b63fc7a51fe3c0e4da66ec77e2896acc697bb531cf48b8df0a"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.1.2"
-  bonsoir_linux:
-    dependency: transitive
-    description:
-      name: bonsoir_linux
-      sha256: b3ead464c679651940ba378d38720574b1bfdf9a5b0e8cb2d4480416e1e1b5a5
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.1.1"
-  bonsoir_platform_interface:
-    dependency: transitive
-    description:
-      name: bonsoir_platform_interface
-      sha256: c08af1733b6ec3bb109e08855f91da6fee52fe57cb6033be2fd6648a74f94de0
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.0.1"
-  bonsoir_windows:
-    dependency: transitive
-    description:
-      name: bonsoir_windows
-      sha256: "22ca4c5dcba2b95fcedb723132a5d65930df3d69634f169eb327c366c9f89151"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.3.1"
   boolean_selector:
     dependency: transitive
     description:
@@ -154,7 +106,7 @@ packages:
     source: hosted
     version: "1.1.0"
   crypto:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: crypto
       sha256: e3626ae6270383c9e3a549f34c9e4cd26c09ae6a9adaab2bf4737a00340efdc4
@@ -177,14 +129,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.6"
-  dbus:
-    dependency: transitive
-    description:
-      name: dbus
-      sha256: f7db8504e715b835f5ebe5fe74604ccd961d504c73389a5d8e81bafc2e2f3612
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.8.0"
   desktop_drop:
     dependency: "direct main"
     description:
@@ -293,22 +237,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
-  http:
-    dependency: "direct main"
-    description:
-      name: http
-      sha256: "87721a4a50b19c7f1d49001e51409bddc46303966ce89a65af4f4e6004896412"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.6.0"
-  http_parser:
-    dependency: transitive
-    description:
-      name: http_parser
-      sha256: "178d74305e7866013777bab2c3d8726205dc5a4dd935297175b19a23a2e66571"
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.1.2"
   intl:
     dependency: transitive
     description:
@@ -517,14 +445,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
-  petitparser:
-    dependency: transitive
-    description:
-      name: petitparser
-      sha256: "2f1564aadb14215e478563b5406cb80729d022158c01dc50c96013c2f7eb4790"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.1.0"
   pixel_snap:
     dependency: transitive
     description:
@@ -565,13 +485,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
-  shared_protocol:
-    dependency: "direct main"
-    description:
-      path: "../shared_protocol"
-      relative: true
-    source: path
-    version: "0.1.0"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -649,14 +562,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.14"
-  typed_data:
-    dependency: transitive
-    description:
-      name: typed_data
-      sha256: f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.4.0"
   uuid:
     dependency: transitive
     description:
@@ -689,22 +594,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.2"
-  web_socket:
-    dependency: transitive
-    description:
-      name: web_socket
-      sha256: "34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.1"
-  web_socket_channel:
-    dependency: "direct main"
-    description:
-      name: web_socket_channel
-      sha256: d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.3"
   win32:
     dependency: "direct main"
     description:
@@ -729,14 +618,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.0"
-  xml:
-    dependency: transitive
-    description:
-      name: xml
-      sha256: "0fe8cc98946def31cbcbc8734aa4067031e6f65ea3a78a508060bfed2200bfeb"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.1.0"
   yaml:
     dependency: transitive
     description:
