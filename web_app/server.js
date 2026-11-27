@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { getPwaIconPng } from './lib/pwa_icons.js';
 import { upgradeWebSocket } from './lib/websocket.js';
-import { streamZipFiles } from './lib/zip.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -675,19 +674,6 @@ function createTransferRoom({
       return;
     }
 
-    if (pathname === '/api/desktop/received-zip' && req.method === 'GET') {
-      const entries = transferRecords
-        .filter((r) => r.state === 'completed' && r.direction === 'from_phone' && r.savedPath && fs.existsSync(r.savedPath))
-        .map((r) => ({ name: r.fileName, filePath: r.savedPath }));
-      if (!entries.length) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'No received files available to zip.' }));
-        return;
-      }
-      await streamZipFiles(res, entries, 'DeviceBridge_Received.zip');
-      return;
-    }
-
     if (pathname.startsWith('/api/desktop/received/') && req.method === 'GET') {
       const recId = decodeURIComponentSafe(pathname.slice('/api/desktop/received/'.length));
       const rec = transferRecords.find((r) => r.id === recId && r.savedPath);
@@ -789,19 +775,6 @@ function createTransferRoom({
     if (pathname === '/api/files' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ files: serializeOutboxForMobile() }));
-      return;
-    }
-
-    if (pathname === '/api/download-zip' && req.method === 'GET') {
-      const entries = Array.from(outboxFiles.values())
-        .filter((f) => f.filePath && fs.existsSync(f.filePath))
-        .map((f) => ({ name: f.name, filePath: f.filePath }));
-      if (!entries.length) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'No files available to download.' }));
-        return;
-      }
-      await streamZipFiles(res, entries, 'DeviceBridge_Files.zip');
       return;
     }
 

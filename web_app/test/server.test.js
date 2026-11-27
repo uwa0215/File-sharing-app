@@ -226,22 +226,6 @@ describe('DeviceBridge QR Web App', () => {
     assert.equal(dlRes.headers.get('x-file-signature'), shareJson.signature);
     assert.equal(await dlRes.text(), 'Hello Phone!');
 
-    // ZIP endpoints bundle both received and outbox files into valid STORE ZIP archives
-    const deskZipRes = await fetch(`http://127.0.0.1:${port}/api/desktop/received-zip`);
-    assert.equal(deskZipRes.status, 200);
-    assert.equal(deskZipRes.headers.get('content-type'), 'application/zip');
-    const deskZipBuf = Buffer.from(await deskZipRes.arrayBuffer());
-    assert.equal(deskZipBuf.readUInt32LE(0), 0x04034b50); // Local header magic
-    assert.ok(deskZipBuf.includes(Buffer.from('IMG_001.jpg')));
-    assert.ok(deskZipBuf.includes(Buffer.from('clip.mp4')));
-
-    const mobZipRes = await fetch(`http://127.0.0.1:${port}/api/download-zip?token=${token}`);
-    assert.equal(mobZipRes.status, 200);
-    assert.equal(mobZipRes.headers.get('content-type'), 'application/zip');
-    const mobZipBuf = Buffer.from(await mobZipRes.arrayBuffer());
-    assert.equal(mobZipBuf.readUInt32LE(0), 0x04034b50);
-    assert.ok(mobZipBuf.includes(Buffer.from('report.txt')));
-
     // PWA manifest, Service Worker, and generated PNG icons
     const manifestRes = await fetch(`http://127.0.0.1:${port}/manifest.json?token=${token}`);
     assert.equal(manifestRes.status, 200);

@@ -1045,7 +1045,7 @@
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <a id="dlZipDesktopBtn" class="btn secondary" style="display:none;" download="DeviceBridge_Received.zip">Download All (.zip)</a>
+              <button id="dlAllDesktopBtn" class="btn secondary" type="button" style="display:none;">Download All</button>
               <button id="clearFinishedBtn" class="btn secondary" type="button">Clear Finished</button>
             </div>
           </div>
@@ -1121,7 +1121,7 @@
     const saveDirText = document.getElementById('saveDirText');
     const openFolderBtn = document.getElementById('openFolderBtn');
     const autoSaveBtn = document.getElementById('autoSaveBtn');
-    const dlZipDesktopBtn = document.getElementById('dlZipDesktopBtn');
+    const dlAllDesktopBtn = document.getElementById('dlAllDesktopBtn');
     const qrActions = document.querySelector('.qr-actions');
     const receivedCount = document.getElementById('receivedCount');
     const outboxCount = document.getElementById('outboxCount');
@@ -1351,17 +1351,29 @@
       return row;
     }
 
+    let completedIncomingList = [];
+
+    dlAllDesktopBtn.onclick = () => {
+      if (!completedIncomingList.length) return;
+      showToast('Downloading ' + completedIncomingList.length + ' file(s)...');
+      completedIncomingList.forEach((rec, idx) => {
+        setTimeout(() => {
+          const a = document.createElement('a');
+          a.href = withRoomParams('/api/desktop/received/' + encodeURIComponent(rec.id));
+          a.download = rec.fileName;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }, idx * 300);
+      });
+    };
+
     function renderTransfers(transfers) {
       receivedCount.textContent = (transfers || []).length;
-      const completedIncoming = (transfers || []).filter(
+      completedIncomingList = (transfers || []).filter(
         (r) => r.state === 'completed' && r.direction === 'from_phone',
       );
-      if (completedIncoming.length > 0) {
-        dlZipDesktopBtn.style.display = 'inline-flex';
-        dlZipDesktopBtn.href = withRoomParams('/api/desktop/received-zip');
-      } else {
-        dlZipDesktopBtn.style.display = 'none';
-      }
+      dlAllDesktopBtn.style.display = completedIncomingList.length > 1 ? 'inline-flex' : 'none';
       if (!transfers || !transfers.length) {
         incomingList.innerHTML = emptyIncomingHtml();
         return;

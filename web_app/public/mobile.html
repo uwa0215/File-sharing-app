@@ -1102,17 +1102,13 @@
 
     savePhotosAllBtn.onclick = () => saveMediaViaShare(sharedFiles, savePhotosAllBtn);
 
-    dlAllBtn.textContent = 'Download .zip';
+    dlAllBtn.textContent = 'Download All';
     dlAllBtn.onclick = () => {
-      const a = document.createElement('a');
-      a.href = '/api/download-zip?token=' + encodeURIComponent(token) +
-        '&session=' + encodeURIComponent(sessionKey) +
-        '&cid=' + encodeURIComponent(clientId);
-      a.download = 'DeviceBridge_Files.zip';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      showToast('Downloading ZIP archive');
+      if (!sharedFiles.length) return;
+      showToast('Downloading ' + sharedFiles.length + ' file(s)...');
+      sharedFiles.forEach((f, idx) => {
+        setTimeout(() => triggerDownload(f), idx * 350);
+      });
     };
 
     // PWA Install, Service Worker registration, and Android Share Target queue
