@@ -260,6 +260,26 @@ describe('DeviceBridge QR Web App', () => {
     const iconBuf = Buffer.from(await iconRes.arrayBuffer());
     assert.deepEqual(iconBuf.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
 
+    // Concurrent multi-file uploads with identical filenames do not overwrite or collide
+    const burstPayloads = [0, 1, 2, 3].map((idx) => Buffer.from(`BurstPhotoData-${idx}`));
+    const burstResults = await Promise.all(
+      burstPayloads.map(async (buf) => {
+        const s = signFile(keyHex, 'burst.jpg', buf);
+        const r = await fetch(
+          `http://127.0.0.1:${port}/api/upload?token=${token}&name=burst.jpg&size=${buf.length}`,
+          {
+            method: 'POST',
+            headers: { 'x-file-sha256': s.sha, 'x-file-signature': s.sig },
+            body: buf,
+          },
+        );
+        assert.equal(r.status, 200);
+        return r.json();
+      }),
+    );
+    const savedNames = new Set(burstResults.map((r) => r.savedName));
+    assert.equal(savedNames.size, 4);
+
     // Media shared file returns accurate image MIME & supports inline preview
     const photoShare = await (
       await fetch(`http://127.0.0.1:${port}/api/desktop/share-file?name=album.jpg`, {

@@ -724,26 +724,37 @@
       return bytes;
     }
 
+    let hashQueue = Promise.resolve();
+
     async function computeSignatureHeaders(file) {
       if (!secState.requireSignature || !signingKeyHex || !window.crypto || !window.crypto.subtle) {
         return {};
       }
-      const buf = await file.arrayBuffer();
-      const shaBuf = await crypto.subtle.digest('SHA-256', buf);
-      const shaHex = toHex(shaBuf);
-      const manifest = new TextEncoder().encode(`${file.name}|${file.size}|${shaHex}`);
-      const hmacKey = await crypto.subtle.importKey(
-        'raw',
-        fromHex(signingKeyHex),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign'],
-      );
-      const sigBuf = await crypto.subtle.sign('HMAC', hmacKey, manifest);
-      return {
-        'x-file-sha256': shaHex,
-        'x-file-signature': toHex(sigBuf),
+      const doHash = async () => {
+        const buf = await file.arrayBuffer();
+        const shaBuf = await crypto.subtle.digest('SHA-256', buf);
+        const shaHex = toHex(shaBuf);
+        const manifest = new TextEncoder().encode(`${file.name}|${file.size}|${shaHex}`);
+        const hmacKey = await crypto.subtle.importKey(
+          'raw',
+          fromHex(signingKeyHex),
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign'],
+        );
+        const sigBuf = await crypto.subtle.sign('HMAC', hmacKey, manifest);
+        return {
+          'x-file-sha256': shaHex,
+          'x-file-signature': toHex(sigBuf),
+        };
       };
+      // Serialize large-file hashing so multiple videos don't exhaust mobile RAM
+      if (file.size > 10 * 1024 * 1024) {
+        const queued = hashQueue.then(doHash, doHash);
+        hashQueue = queued.catch(() => {});
+        return queued;
+      }
+      return doHash();
     }
 
     function updateGateUi() {
@@ -863,11 +874,15 @@
       let failed = 0;
       let nextIdx = 0;
       const started = performance.now();
+      let lastUiUpdate = 0;
 
-      function update(activeName, phase) {
+      function update(activeName, phase, force = false) {
+        const now = performance.now();
+        if (!force && now - lastUiUpdate < 80) return;
+        lastUiUpdate = now;
         const loaded = perFileLoaded.reduce((a, b) => a + b, 0);
         const pct = totalBytes > 0 ? Math.round((loaded / totalBytes) * 100) : Math.round((completed / files.length) * 100);
-        const sec = Math.max(0.1, (performance.now() - started) / 1000);
+        const sec = Math.max(0.1, (now - started) / 1000);
         const speed = fmtBytes(Math.round(loaded / sec)) + '/s';
         progressFill.style.width = pct + '%';
         progressText.textContent = (phase || ('Sending ' + completed + '/' + files.length + ' (' + fmtBytes(loaded) + ' / ' + fmtBytes(totalBytes) + ' • ' + speed + ')')) + ' • ' + activeName;
@@ -879,7 +894,7 @@
           if (i >= files.length) return;
           const file = files[i];
           try {
-            update(file.name, 'Signing ' + file.name);
+            update(file.name, 'Signing ' + file.name, true);
             const sigHeaders = await computeSignatureHeaders(file);
             await uploadSingleFile(file, sigHeaders, (loaded) => {
               perFileLoaded[i] = loaded;
@@ -888,7 +903,7 @@
             perFileLoaded[i] = file.size;
             completed++;
             succeeded++;
-            update(file.name);
+            update(file.name, '', true);
             addSentRow(file.name, file.size, true, Boolean(sigHeaders['x-file-signature']), '');
           } catch (err) {
             completed++;
@@ -898,7 +913,7 @@
         }
       }
 
-      await Promise.all(Array.from({ length: Math.min(3, files.length) }, worker));
+      await Promise.all(Array.from({ length: Math.min(2, files.length) }, worker));
       progressFill.style.width = succeeded > 0 ? '100%' : '0%';
       if (failed === 0) {
         progressText.textContent = 'Sent ' + succeeded + ' signed file(s) (' + fmtBytes(totalBytes) + ')';
@@ -996,51 +1011,73 @@
       const canShareFiles = typeof navigator.share === 'function' && typeof navigator.canShare === 'function';
       dlAllBtn.style.display = sharedFiles.length > 1 ? 'inline-flex' : 'none';
       savePhotosAllBtn.style.display = (canShareFiles && mediaFiles.length > 0) ? 'inline-flex' : 'none';
-      outboxList.innerHTML = '';
 
-      for (const f of sharedFiles) {
-        const row = document.createElement('div');
-        row.className = 'row';
+      const emptyP = outboxList.querySelector('p');
+      if (emptyP) emptyP.remove();
 
-        if (isImageName(f.name)) {
-          const img = document.createElement('img');
-          img.className = 'thumb-img';
-          img.src = downloadHref(f.id, true);
-          img.alt = f.name;
-          img.onerror = () => img.remove();
-          row.appendChild(img);
+      const existing = new Map();
+      for (const el of Array.from(outboxList.children)) {
+        if (el.dataset && el.dataset.fileId) existing.set(el.dataset.fileId, el);
+      }
+      const activeIds = new Set();
+
+      for (let i = 0; i < sharedFiles.length; i++) {
+        const f = sharedFiles[i];
+        activeIds.add(f.id);
+        let row = existing.get(f.id);
+        if (!row) {
+          row = document.createElement('div');
+          row.className = 'row';
+          row.dataset.fileId = f.id;
+
+          if (isImageName(f.name)) {
+            const img = document.createElement('img');
+            img.className = 'thumb-img';
+            img.src = downloadHref(f.id, true);
+            img.alt = f.name;
+            img.onerror = () => img.remove();
+            row.appendChild(img);
+          }
+
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.innerHTML = '<div class="name"></div><div class="sub"></div>';
+          meta.querySelector('.name').textContent = f.name;
+          meta.querySelector('.sub').textContent = fmtBytes(f.sizeBytes || 0) + (f.sha256 ? ' • Signed SHA-256' : '');
+          row.appendChild(meta);
+
+          const actions = document.createElement('div');
+          actions.style.display = 'flex';
+          actions.style.gap = '6px';
+          actions.style.flexWrap = 'wrap';
+
+          if (canShareFiles && isMediaName(f.name)) {
+            const galleryBtn = document.createElement('button');
+            galleryBtn.className = 'btn';
+            galleryBtn.type = 'button';
+            galleryBtn.textContent = 'Save to Photos';
+            galleryBtn.onclick = () => saveMediaViaShare([f], galleryBtn);
+            actions.appendChild(galleryBtn);
+          }
+
+          const dl = document.createElement('a');
+          dl.className = (canShareFiles && isMediaName(f.name)) ? 'btn secondary' : 'btn';
+          dl.textContent = 'Download';
+          dl.href = downloadHref(f.id);
+          dl.download = f.name;
+          actions.appendChild(dl);
+
+          row.appendChild(actions);
         }
 
-        const meta = document.createElement('div');
-        meta.className = 'meta';
-        meta.innerHTML = '<div class="name"></div><div class="sub"></div>';
-        meta.querySelector('.name').textContent = f.name;
-        meta.querySelector('.sub').textContent = fmtBytes(f.sizeBytes || 0) + (f.sha256 ? ' • Signed SHA-256' : '');
-        row.appendChild(meta);
-
-        const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.gap = '6px';
-        actions.style.flexWrap = 'wrap';
-
-        if (canShareFiles && isMediaName(f.name)) {
-          const galleryBtn = document.createElement('button');
-          galleryBtn.className = 'btn';
-          galleryBtn.type = 'button';
-          galleryBtn.textContent = 'Save to Photos';
-          galleryBtn.onclick = () => saveMediaViaShare([f], galleryBtn);
-          actions.appendChild(galleryBtn);
+        const currentAtIdx = outboxList.children[i] || null;
+        if (currentAtIdx !== row) {
+          outboxList.insertBefore(row, currentAtIdx);
         }
+      }
 
-        const dl = document.createElement('a');
-        dl.className = (canShareFiles && isMediaName(f.name)) ? 'btn secondary' : 'btn';
-        dl.textContent = 'Download';
-        dl.href = downloadHref(f.id);
-        dl.download = f.name;
-        actions.appendChild(dl);
-
-        row.appendChild(actions);
-        outboxList.appendChild(row);
+      for (const [id, el] of existing) {
+        if (!activeIds.has(id)) el.remove();
       }
     }
 

@@ -1245,6 +1245,112 @@
       `;
     }
 
+    let autoSaveDelayIdx = 0;
+
+    function applyTransferRowData(row, rec) {
+      const statusText = rec.state === 'failed'
+        ? ('Failed: ' + (rec.error || 'error'))
+        : ((rec.deviceLabel ? 'From ' + rec.deviceLabel : (rec.direction === 'from_phone' ? 'From phone' : 'Sent to phone')) +
+           ' • ' + fmtBytes(rec.transferredBytes) +
+           (rec.totalBytes > 0 ? ' / ' + fmtBytes(rec.totalBytes) : '') +
+           ' • ' + rec.state +
+           (rec.sha256 ? ' • SHA-256 ' + rec.sha256.slice(0, 8) : ''));
+
+      if (row._lastState === rec.state && row._lastBytes === rec.transferredBytes && row._lastSub === statusText) {
+        return;
+      }
+      row._lastState = rec.state;
+      row._lastBytes = rec.transferredBytes;
+      row._lastSub = statusText;
+
+      const meta = row._metaEl;
+      row._subEl.textContent = statusText;
+
+      // Upgrade icon to image thumbnail ONCE upon completion
+      if (!row._upgradedThumb && rec.state === 'completed' && rec.direction === 'from_phone' && isImageName(rec.fileName)) {
+        row._upgradedThumb = true;
+        const img = document.createElement('img');
+        img.className = 'thumb';
+        img.src = withRoomParams('/api/desktop/received/' + encodeURIComponent(rec.id) + '?inline=1');
+        img.alt = rec.fileName;
+        img.onerror = () => {
+          const fallback = document.createElement('div');
+          fallback.className = 'thumb';
+          fallback.innerHTML = fileIconSvg(rec.fileName);
+          img.replaceWith(fallback);
+        };
+        row._thumbEl.replaceWith(img);
+        row._thumbEl = img;
+      }
+
+      if (rec.verified && rec.state === 'completed' && !row._sigBadge) {
+        const badge = document.createElement('span');
+        badge.className = 'sig-badge';
+        badge.innerHTML = verifiedBadgeSvg() + '<span>Signed</span>';
+        if (rec.sha256) badge.title = 'SHA-256: ' + rec.sha256;
+        row._nameEl.appendChild(badge);
+        row._sigBadge = badge;
+      }
+
+      if (rec.state === 'transferring') {
+        const pct = rec.totalBytes > 0 ? Math.min(100, Math.round((rec.transferredBytes / rec.totalBytes) * 100)) : 35;
+        if (!row._barEl) {
+          const bar = document.createElement('div');
+          bar.className = 'cute-bar';
+          bar.innerHTML = '<div class="cute-bar-fill"></div>';
+          meta.appendChild(bar);
+          row._barEl = bar;
+        }
+        row._barEl.firstElementChild.style.width = pct + '%';
+      } else if (row._barEl) {
+        row._barEl.remove();
+        row._barEl = null;
+      }
+
+      if (rec.state === 'completed' && rec.direction === 'from_phone' && !row._dlBtn) {
+        const dl = document.createElement('a');
+        dl.className = 'btn secondary';
+        dl.textContent = 'Save Copy';
+        dl.href = withRoomParams('/api/desktop/received/' + encodeURIComponent(rec.id));
+        dl.download = rec.fileName;
+        row.appendChild(dl);
+        row._dlBtn = dl;
+      }
+    }
+
+    function createTransferRow(rec) {
+      const row = document.createElement('div');
+      row.className = 'item-row';
+      row.dataset.txId = rec.id;
+
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      thumb.innerHTML = fileIconSvg(rec.fileName);
+
+      const meta = document.createElement('div');
+      meta.className = 'item-meta';
+      const name = document.createElement('div');
+      name.className = 'item-name';
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = rec.fileName;
+      name.appendChild(nameSpan);
+
+      const sub = document.createElement('div');
+      sub.className = 'item-sub';
+
+      meta.appendChild(name);
+      meta.appendChild(sub);
+      row.appendChild(thumb);
+      row.appendChild(meta);
+
+      row._thumbEl = thumb;
+      row._metaEl = meta;
+      row._nameEl = name;
+      row._subEl = sub;
+      applyTransferRowData(row, rec);
+      return row;
+    }
+
     function renderTransfers(transfers) {
       receivedCount.textContent = (transfers || []).length;
       const completedIncoming = (transfers || []).filter(
@@ -1260,90 +1366,55 @@
         incomingList.innerHTML = emptyIncomingHtml();
         return;
       }
-      incomingList.innerHTML = '';
-      for (const rec of transfers) {
+
+      const emptyEl = incomingList.querySelector('.empty-hero');
+      if (emptyEl) emptyEl.remove();
+
+      const existing = new Map();
+      for (const el of Array.from(incomingList.children)) {
+        if (el.dataset && el.dataset.txId) existing.set(el.dataset.txId, el);
+      }
+
+      const activeIds = new Set();
+      let celebrateThisBatch = false;
+      for (let i = 0; i < transfers.length; i++) {
+        const rec = transfers[i];
+        activeIds.add(rec.id);
         if (rec.state === 'completed' && !celebratedIds.has(rec.id)) {
           celebratedIds.add(rec.id);
-          burstSparkles();
+          celebrateThisBatch = true;
           if (autoSaveEnabled && rec.direction === 'from_phone' && !autoDownloadedIds.has(rec.id)) {
             autoDownloadedIds.add(rec.id);
-            const autoLink = document.createElement('a');
-            autoLink.href = withRoomParams('/api/desktop/received/' + encodeURIComponent(rec.id));
-            autoLink.download = rec.fileName;
-            document.body.appendChild(autoLink);
-            autoLink.click();
-            autoLink.remove();
+            const delay = (autoSaveDelayIdx++) * 280;
+            setTimeout(() => {
+              const autoLink = document.createElement('a');
+              autoLink.href = withRoomParams('/api/desktop/received/' + encodeURIComponent(rec.id));
+              autoLink.download = rec.fileName;
+              document.body.appendChild(autoLink);
+              autoLink.click();
+              autoLink.remove();
+            }, delay);
           }
         }
 
-        const row = document.createElement('div');
-        row.className = 'item-row';
-
-        let thumb;
-        if (rec.state === 'completed' && rec.direction === 'from_phone' && isImageName(rec.fileName)) {
-          thumb = document.createElement('img');
-          thumb.className = 'thumb';
-          thumb.src = withRoomParams('/api/desktop/received/' + encodeURIComponent(rec.id) + '?inline=1');
-          thumb.alt = rec.fileName;
-          thumb.onerror = () => {
-            const fallback = document.createElement('div');
-            fallback.className = 'thumb';
-            fallback.innerHTML = fileIconSvg(rec.fileName);
-            thumb.replaceWith(fallback);
-          };
+        let row = existing.get(rec.id);
+        if (row) {
+          applyTransferRowData(row, rec);
         } else {
-          thumb = document.createElement('div');
-          thumb.className = 'thumb';
-          thumb.innerHTML = fileIconSvg(rec.fileName);
+          row = createTransferRow(rec);
         }
-
-        const meta = document.createElement('div');
-        meta.className = 'item-meta';
-        const name = document.createElement('div');
-        name.className = 'item-name';
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = rec.fileName;
-        name.appendChild(nameSpan);
-
-        if (rec.verified && rec.state === 'completed') {
-          const badge = document.createElement('span');
-          badge.className = 'sig-badge';
-          badge.innerHTML = verifiedBadgeSvg() + '<span>Signed</span>';
-          if (rec.sha256) badge.title = 'SHA-256: ' + rec.sha256;
-          name.appendChild(badge);
+        const currentAtIdx = incomingList.children[i] || null;
+        if (currentAtIdx !== row) {
+          incomingList.insertBefore(row, currentAtIdx);
         }
+      }
 
-        const sub = document.createElement('div');
-        sub.className = 'item-sub';
-        const who = rec.deviceLabel ? 'From ' + rec.deviceLabel : (rec.direction === 'from_phone' ? 'From phone' : 'Sent to phone');
-        const shaHint = rec.sha256 ? ' • SHA-256 ' + rec.sha256.slice(0, 8) : '';
-        sub.textContent = rec.state === 'failed'
-          ? ('Failed: ' + (rec.error || 'error'))
-          : (who + ' • ' + fmtBytes(rec.transferredBytes) + (rec.totalBytes > 0 ? ' / ' + fmtBytes(rec.totalBytes) : '') + ' • ' + rec.state + shaHint);
-
-        meta.appendChild(name);
-        meta.appendChild(sub);
-
-        if (rec.state === 'transferring') {
-          const pct = rec.totalBytes > 0 ? Math.round((rec.transferredBytes / rec.totalBytes) * 100) : 35;
-          const bar = document.createElement('div');
-          bar.className = 'cute-bar';
-          bar.innerHTML = '<div class="cute-bar-fill" style="width:' + pct + '%;"></div>';
-          meta.appendChild(bar);
-        }
-
-        row.appendChild(thumb);
-        row.appendChild(meta);
-
-        if (rec.state === 'completed' && rec.direction === 'from_phone') {
-          const dl = document.createElement('a');
-          dl.className = 'btn secondary';
-          dl.textContent = 'Save Copy';
-          dl.href = withRoomParams('/api/desktop/received/' + encodeURIComponent(rec.id));
-          dl.download = rec.fileName;
-          row.appendChild(dl);
-        }
-        incomingList.appendChild(row);
+      for (const [id, el] of existing) {
+        if (!activeIds.has(id)) el.remove();
+      }
+      if (celebrateThisBatch) {
+        autoSaveDelayIdx = 0;
+        burstSparkles();
       }
     }
 
@@ -1529,14 +1600,29 @@
       if (!files.length) return;
       let sent = 0;
       let failed = 0;
-      for (const file of files) {
-        const res = await fetch(withRoomParams('/api/desktop/share-file?name=' + encodeURIComponent(file.name)), {
-          method: 'POST',
-          body: file,
-        }).catch(() => null);
-        if (res && res.ok) sent++;
-        else failed++;
+      let nextIdx = 0;
+      const btnLabel = pickShareBtn.querySelector('span');
+      const origLabel = btnLabel ? btnLabel.textContent : 'Choose Files';
+      pickShareBtn.disabled = true;
+
+      async function worker() {
+        while (true) {
+          const idx = nextIdx++;
+          if (idx >= files.length) return;
+          const file = files[idx];
+          if (btnLabel) btnLabel.textContent = 'Sharing ' + (sent + failed + 1) + '/' + files.length + '...';
+          const res = await fetch(withRoomParams('/api/desktop/share-file?name=' + encodeURIComponent(file.name)), {
+            method: 'POST',
+            body: file,
+          }).catch(() => null);
+          if (res && res.ok) sent++;
+          else failed++;
+        }
       }
+
+      await Promise.all(Array.from({ length: Math.min(3, files.length) }, worker));
+      pickShareBtn.disabled = false;
+      if (btnLabel) btnLabel.textContent = origLabel;
       shareInput.value = '';
       if (sent > 0) {
         burstSparkles();

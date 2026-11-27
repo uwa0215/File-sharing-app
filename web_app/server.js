@@ -155,16 +155,27 @@ async function computeFileSha256(filePath) {
   });
 }
 
-async function uniqueDestPath(dir, fileName) {
+async function uniqueDestPath(dir, fileName, reservedPaths = null) {
+  const isAvailable = (p) =>
+    !reservedPaths?.has(p) && !fs.existsSync(p) && !fs.existsSync(`${p}.part`);
+
   let candidate = path.join(dir, fileName);
-  if (!fs.existsSync(candidate)) return candidate;
+  if (isAvailable(candidate)) {
+    reservedPaths?.add(candidate);
+    return candidate;
+  }
   const ext = path.extname(fileName);
   const stem = path.basename(fileName, ext);
   for (let i = 1; i < 10000; i++) {
     candidate = path.join(dir, `${stem} (${i})${ext}`);
-    if (!fs.existsSync(candidate)) return candidate;
+    if (isAvailable(candidate)) {
+      reservedPaths?.add(candidate);
+      return candidate;
+    }
   }
-  return path.join(dir, `${stem}_${Date.now()}${ext}`);
+  candidate = path.join(dir, `${stem}_${Date.now()}${ext}`);
+  reservedPaths?.add(candidate);
+  return candidate;
 }
 
 function resolveCloudflaredBinary() {
@@ -313,6 +324,12 @@ function createTransferRoom({
   const outboxFiles = new Map();
   const transferRecords = [];
   const activeChunkUploads = new Map();
+  const reservedPaths = new Set();
+
+  let cachedQrUrl = '';
+  let cachedQrSvg = '';
+  let transfersBroadcastTimer = null;
+  let lastTransfersEmitAt = 0;
 
   function touch() {
     lastActiveAt = Date.now();
@@ -354,14 +371,19 @@ function createTransferRoom({
     const tunnel = getTunnelInfo();
     const url = getQrUrl(req);
     const ready = cloudMode ? true : tunnel.ready;
-    const qrSvg = ready
-      ? await QRCode.toString(url, {
+    let qrSvg = '';
+    if (ready) {
+      if (url !== cachedQrUrl || !cachedQrSvg) {
+        cachedQrSvg = await QRCode.toString(url, {
           type: 'svg',
           margin: 2,
           width: 260,
           color: { dark: '#0b1120', light: '#ffffff' },
-        })
-      : '';
+        });
+        cachedQrUrl = url;
+      }
+      qrSvg = cachedQrSvg;
+    }
 
     return {
       cloudMode,
@@ -415,17 +437,40 @@ function createTransferRoom({
     }
   }
 
+  function emitTransfersNow() {
+    clearTimeout(transfersBroadcastTimer);
+    transfersBroadcastTimer = null;
+    lastTransfersEmitAt = Date.now();
+    broadcastDesktop({ type: 'transfers', transfers: transferRecords });
+  }
+
+  function scheduleTransfersBroadcast(immediate = false) {
+    if (immediate) {
+      emitTransfersNow();
+      return;
+    }
+    const elapsed = Date.now() - lastTransfersEmitAt;
+    if (elapsed >= 180) {
+      emitTransfersNow();
+      return;
+    }
+    if (!transfersBroadcastTimer) {
+      transfersBroadcastTimer = setTimeout(emitTransfersNow, 180 - elapsed);
+    }
+  }
+
   function upsertRecord(rec) {
     transferRecords.unshift(rec);
     if (transferRecords.length > 100) transferRecords.length = 100;
-    broadcastDesktop({ type: 'transfers', transfers: transferRecords });
+    scheduleTransfersBroadcast(true);
   }
 
   function updateRecord(id, patch) {
     const idx = transferRecords.findIndex((r) => r.id === id);
     if (idx >= 0) {
       transferRecords[idx] = { ...transferRecords[idx], ...patch };
-      broadcastDesktop({ type: 'transfers', transfers: transferRecords });
+      const isTerminal = patch.state === 'completed' || patch.state === 'failed';
+      scheduleTransfersBroadcast(isTerminal);
     }
   }
 
@@ -566,7 +611,7 @@ function createTransferRoom({
       }
       const safeName = sanitizeFilename(urlObj.searchParams.get('name'));
       await fsp.mkdir(outboxDir, { recursive: true });
-      const dest = await uniqueDestPath(outboxDir, safeName);
+      const dest = await uniqueDestPath(outboxDir, safeName, reservedPaths);
       const ws = fs.createWriteStream(dest);
       let written = 0;
       try {
@@ -583,16 +628,19 @@ function createTransferRoom({
             }
           });
           req.on('end', () => ws.end(resolve));
+          req.on('aborted', () => reject(new Error('Upload aborted')));
           ws.on('error', reject);
           req.on('error', reject);
         });
       } catch (err) {
+        reservedPaths.delete(dest);
         ws.destroy();
         await fsp.unlink(dest).catch(() => {});
         res.writeHead(413, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: err.message }));
         return;
       }
+      reservedPaths.delete(dest);
       const stat = await fsp.stat(dest);
       const finalName = path.basename(dest);
       const sha256 = await computeFileSha256(dest);
@@ -657,7 +705,7 @@ function createTransferRoom({
         'Content-Type': mime,
         'Content-Length': stat.size,
         ...(isInline
-          ? {}
+          ? { 'Cache-Control': 'private, max-age=3600' }
           : {
               'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
             }),
@@ -788,7 +836,7 @@ function createTransferRoom({
         'X-File-SHA256': shared.sha256,
         'X-File-Signature': shared.signature,
         ...(isInline
-          ? { 'Cache-Control': 'no-store' }
+          ? { 'Cache-Control': 'private, max-age=3600' }
           : {
               'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
             }),
@@ -837,7 +885,7 @@ function createTransferRoom({
       await fsp.mkdir(receiveDir, { recursive: true });
       let session = activeChunkUploads.get(uploadId);
       if (!session) {
-        const destPath = await uniqueDestPath(receiveDir, safeName);
+        const destPath = await uniqueDestPath(receiveDir, safeName, reservedPaths);
         const partPath = `${destPath}.part`;
         const finalName = path.basename(destPath);
         const txId = `ul_${nextId++}`;
@@ -911,6 +959,7 @@ function createTransferRoom({
 
           if (security.requireSignature && !sigValid) {
             activeChunkUploads.delete(uploadId);
+            reservedPaths.delete(session.destPath);
             await fsp.unlink(session.partPath).catch(() => {});
             updateRecord(session.txId, {
               state: 'failed',
@@ -928,6 +977,7 @@ function createTransferRoom({
 
           await fsp.rename(session.partPath, session.destPath);
           activeChunkUploads.delete(uploadId);
+          reservedPaths.delete(session.destPath);
           updateRecord(session.txId, {
             state: 'completed',
             totalBytes: session.receivedBytes,
@@ -945,6 +995,7 @@ function createTransferRoom({
       } catch (err) {
         writeStream.destroy();
         activeChunkUploads.delete(uploadId);
+        reservedPaths.delete(session.destPath);
         fsp.unlink(session.partPath).catch(() => {});
         updateRecord(session.txId, { state: 'failed', error: err.message });
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -977,7 +1028,7 @@ function createTransferRoom({
       }
 
       await fsp.mkdir(receiveDir, { recursive: true });
-      const destPath = await uniqueDestPath(receiveDir, safeName);
+      const destPath = await uniqueDestPath(receiveDir, safeName, reservedPaths);
       const partPath = `${destPath}.part`;
       const finalName = path.basename(destPath);
       const txId = `ul_${nextId++}`;
@@ -1014,7 +1065,7 @@ function createTransferRoom({
               writeStream.once('drain', () => req.resume());
             }
             const now = Date.now();
-            if (now - lastEmit >= 100) {
+            if (now - lastEmit >= 180) {
               lastEmit = now;
               updateRecord(txId, {
                 transferredBytes: received,
@@ -1023,6 +1074,7 @@ function createTransferRoom({
             }
           });
           req.on('end', () => writeStream.end(resolve));
+          req.on('aborted', () => reject(new Error('Upload aborted')));
           req.on('error', reject);
           writeStream.on('error', reject);
         });
@@ -1041,6 +1093,7 @@ function createTransferRoom({
           );
 
         if (security.requireSignature && !sigValid) {
+          reservedPaths.delete(destPath);
           await fsp.unlink(partPath).catch(() => {});
           updateRecord(txId, {
             state: 'failed',
@@ -1057,6 +1110,7 @@ function createTransferRoom({
         }
 
         await fsp.rename(partPath, destPath);
+        reservedPaths.delete(destPath);
         updateRecord(txId, {
           state: 'completed',
           totalBytes: received,
@@ -1077,6 +1131,7 @@ function createTransferRoom({
           }),
         );
       } catch (err) {
+        reservedPaths.delete(destPath);
         writeStream.destroy();
         fsp.unlink(partPath).catch(() => {});
         updateRecord(txId, { state: 'failed', error: err.message });
@@ -1149,6 +1204,7 @@ function createTransferRoom({
   }
 
   async function close() {
+    clearTimeout(transfersBroadcastTimer);
     for (const ws of desktopSockets) ws.close();
     for (const c of mobileClients.values()) c.ws.close();
     desktopSockets.clear();
