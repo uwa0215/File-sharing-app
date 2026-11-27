@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:windows_host/main.dart';
 
 void main() {
-  testWidgets('renders QR scanner + transfer window and switches to USB mode', (
+  testWidgets(
+      'renders No Wi-Fi Send, USB Explorer, and QR Wi-Fi modes cleanly', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 820);
@@ -15,21 +16,13 @@ void main() {
       const DeviceBridgeWindowsApp(enableNativeServices: false),
     );
 
+    // 1. Default No Wi-Fi Send tab
     expect(find.text('DeviceBridge'), findsOneWidget);
-    expect(find.text('Scan QR Code on Other Device'), findsOneWidget);
-    expect(find.text('Open Transfer Window'), findsOneWidget);
-    expect(find.text('Drag & Drop Files or Folders Here'), findsOneWidget);
+    expect(find.text('Send Target (No Wi-Fi):'), findsOneWidget);
+    expect(find.text('Select Files & Send Now'), findsOneWidget);
 
-    // Open dedicated expandable QR Transfer Window modal.
-    await tester.tap(find.text('Open Transfer Window'));
-    await tester.pumpAndSettle();
-    expect(find.text('QR File Transfer Window'), findsOneWidget);
-
-    // Close modal and switch to USB Cable mode.
-    await tester.tap(find.byTooltip('Close Transfer Window'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('USB Cable'));
+    // 2. Switch to USB Explorer tab
+    await tester.tap(find.text('USB Explorer'));
     await tester.pumpAndSettle();
     expect(find.text('Mirror & Send to Phone'), findsOneWidget);
     expect(
@@ -38,5 +31,15 @@ void main() {
       ),
       findsOneWidget,
     );
+
+    // 3. Switch to QR Wi-Fi tab & open dedicated Transfer Window modal
+    await tester.tap(find.text('QR Wi-Fi'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scan QR Code on Other Device'), findsOneWidget);
+    expect(find.text('Open Transfer Window'), findsOneWidget);
+
+    await tester.tap(find.text('Open Transfer Window'));
+    await tester.pumpAndSettle();
+    expect(find.text('QR File Transfer Window'), findsOneWidget);
   });
 }

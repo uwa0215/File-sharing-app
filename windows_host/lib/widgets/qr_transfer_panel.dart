@@ -38,6 +38,10 @@ class _QrTransferPanelState extends State<QrTransferPanel> {
   String? _selectedIp;
   bool _dropHovering = false;
   bool _transferWindowDialogOpen = false;
+  bool _hasFirewallRule = true;
+  bool _isPublicNetwork = false;
+  String _networkProfileLabel = '';
+  bool _checkingFirewall = false;
   String? _lastScannedAnnouncement;
 
   @override
@@ -52,6 +56,9 @@ class _QrTransferPanelState extends State<QrTransferPanel> {
         _lastScannedAnnouncement =
             'Scanned & connected: ${client.deviceLabel} (${client.remoteAddress})';
       });
+      if (!_transferWindowDialogOpen) {
+        _openDedicatedTransferWindow();
+      }
     });
     if (widget.enableNativeServices) {
       unawaited(_initServerAndNetwork());
@@ -73,7 +80,30 @@ class _QrTransferPanelState extends State<QrTransferPanel> {
       );
     }
     await widget.server.start();
-    await _refreshInterfaces();
+    await Future.wait([
+      _refreshInterfaces(),
+      _refreshFirewallStatus(),
+    ]);
+  }
+
+  Future<void> _refreshFirewallStatus() async {
+    final status = await widget.server.checkWindowsFirewallStatus();
+    if (!mounted) return;
+    setState(() {
+      _hasFirewallRule = status.hasFirewallRule;
+      _isPublicNetwork = status.isPublicNetwork;
+      _networkProfileLabel = status.profileLabel;
+    });
+  }
+
+  Future<void> _allowFirewallPressed() async {
+    setState(() => _checkingFirewall = true);
+    try {
+      await widget.server.requestFirewallAllowRule();
+      await _refreshFirewallStatus();
+    } finally {
+      if (mounted) setState(() => _checkingFirewall = false);
+    }
   }
 
   Future<void> _refreshInterfaces() async {
@@ -403,6 +433,67 @@ class _QrTransferPanelState extends State<QrTransferPanel> {
                   ),
                 ),
                 const SizedBox(height: 12),
+
+                if (widget.enableNativeServices && !_hasFirewallRule) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.amberAccent.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.security,
+                              size: 18,
+                              color: Colors.amberAccent,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _isPublicNetwork
+                                    ? 'Windows Firewall (${_networkProfileLabel.isEmpty ? "Public" : _networkProfileLabel}) may block phone scans'
+                                    : 'Allow Windows Firewall for phone scans',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12.5,
+                                  color: Colors.amberAccent,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'If scanning the QR code does not open the page on your phone, allow DeviceBridge in Windows Firewall (or try Mobile Hotspot if office/school Wi-Fi blocks local devices).',
+                          style: TextStyle(fontSize: 11.5, color: Colors.white70),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.tonalIcon(
+                            onPressed: _checkingFirewall
+                                ? null
+                                : _allowFirewallPressed,
+                            icon: const Icon(Icons.shield_outlined, size: 17),
+                            label: Text(
+                              _checkingFirewall
+                                  ? 'Waiting for permission...'
+                                  : 'Allow Windows Firewall Access',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 // Incoming Save Folder Settings
                 Container(

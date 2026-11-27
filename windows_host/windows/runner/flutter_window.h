@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "bluetooth_bridge.h"
 #include "win32_window.h"
 #include "wpd_bridge.h"
 
@@ -32,6 +33,9 @@ class FlutterWindow : public Win32Window {
 
   // Native Win32 WPD (MTP/PTP) + USB plug/unplug bridge.
   std::unique_ptr<WpdBridge> wpd_bridge_;
+
+  // Native Win32 Bluetooth discovery + OBEX Object Push sender.
+  std::unique_ptr<BluetoothBridge> bluetooth_bridge_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

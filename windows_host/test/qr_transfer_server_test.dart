@@ -46,6 +46,20 @@ void main() {
       await srcFile.writeAsString('Hello from Windows QR Server!');
       await server.addOutboxPaths([srcFile.path]);
 
+      // Verify short /s/<token> landing page works and rejects bad token.
+      final htmlClient = HttpClient();
+      try {
+        final qrUrl = server.buildQrUrl('127.0.0.1');
+        expect(qrUrl, contains('/s/$token'));
+        final pageReq = await htmlClient.getUrl(Uri.parse(qrUrl));
+        final pageRes = await pageReq.close();
+        expect(pageRes.statusCode, HttpStatus.ok);
+        final pageHtml = await utf8.decoder.bind(pageRes).join();
+        expect(pageHtml, contains('DeviceBridge QR'));
+      } finally {
+        htmlClient.close(force: true);
+      }
+
       // Connect WebSocket simulating scanned phone browser.
       final scannedFuture = server.deviceScannedStream.first;
       final ws = await WebSocket.connect(

@@ -27,6 +27,8 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   wpd_bridge_ = std::make_unique<WpdBridge>(
       GetHandle(), flutter_controller_->engine()->messenger());
+  bluetooth_bridge_ = std::make_unique<BluetoothBridge>(
+      GetHandle(), flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -42,6 +44,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  bluetooth_bridge_.reset();
   wpd_bridge_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
@@ -76,6 +79,11 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case kWmWpdCallback:
       if (wpd_bridge_) {
         wpd_bridge_->DrainCallbacks();
+      }
+      return 0;
+    case kWmBluetoothCallback:
+      if (bluetooth_bridge_) {
+        bluetooth_bridge_->DrainCallbacks();
       }
       return 0;
   }

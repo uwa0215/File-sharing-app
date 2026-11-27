@@ -11,14 +11,16 @@ import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 
 import 'models/usb_device_models.dart';
 import 'services/adb_usb_service.dart';
+import 'services/bluetooth_transfer_service.dart';
 import 'services/mirror_process_manager.dart';
 import 'services/native_tools_locator.dart';
 import 'services/qr_transfer_server.dart';
 import 'services/usb_device_manager.dart';
 import 'services/wpd_usb_service.dart';
+import 'widgets/instant_send_panel.dart';
 import 'widgets/qr_transfer_panel.dart';
 
-enum AppWorkspaceMode { qrWireless, usbCable }
+enum AppWorkspaceMode { instantNoWifi, usbCable, qrWireless }
 
 void main() {
   runApp(const DeviceBridgeWindowsApp());
@@ -68,6 +70,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late final UsbDeviceManager _usbManager;
   late final MirrorProcessManager _mirrorManager;
   late final QrTransferServer _qrServer;
+  late final BluetoothTransferService _bluetoothService;
 
   final GlobalKey _viewportKey = GlobalKey();
   final TextEditingController _searchController = TextEditingController();
@@ -78,7 +81,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<MirrorStatus>? _mirrorSub;
   StreamSubscription<QrConnectedClient>? _qrScanSub;
 
-  AppWorkspaceMode _mode = AppWorkspaceMode.qrWireless;
+  AppWorkspaceMode _mode = AppWorkspaceMode.instantNoWifi;
   List<UsbPhoneDevice> _devices = const [];
   UsbPhoneDevice? _selectedDevice;
   List<UsbPathSegment> _breadcrumbs = const [];
@@ -106,6 +109,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       adbService: _adbService,
     );
     _mirrorManager = MirrorProcessManager(locator: _toolsLocator);
+    _bluetoothService = BluetoothTransferService();
     _qrServer = QrTransferServer(
       receiveDir: Directory(p.join(Directory.systemTemp.path, 'DeviceBridge')),
     );
@@ -676,9 +680,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             title: Row(
               children: [
                 Icon(
-                  _mode == AppWorkspaceMode.qrWireless
-                      ? Icons.qr_code_2
-                      : Icons.usb,
+                  switch (_mode) {
+                    AppWorkspaceMode.instantNoWifi => Icons.bolt,
+                    AppWorkspaceMode.usbCable => Icons.usb,
+                    AppWorkspaceMode.qrWireless => Icons.qr_code_2,
+                  },
                   color: const Color(0xFF38BDF8),
                 ),
                 const SizedBox(width: 10),
@@ -686,9 +692,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: Text(
-                    _mode == AppWorkspaceMode.qrWireless
-                        ? 'Scan QR code with another device to transfer files wirelessly'
-                        : _statusBanner,
+                    switch (_mode) {
+                      AppWorkspaceMode.instantNoWifi =>
+                        'Instant Send via USB or Bluetooth — no Wi-Fi needed',
+                      AppWorkspaceMode.usbCable => _statusBanner,
+                      AppWorkspaceMode.qrWireless =>
+                        'Scan QR code with another device to transfer over Wi-Fi',
+                    },
                     style:
                         const TextStyle(fontSize: 12.5, color: Colors.white70),
                     overflow: TextOverflow.ellipsis,
@@ -701,20 +711,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 showSelectedIcon: false,
                 segments: const [
                   ButtonSegment(
-                    value: AppWorkspaceMode.qrWireless,
-                    icon: Icon(Icons.qr_code_2, size: 18),
-                    label: Text('QR Transfer'),
+                    value: AppWorkspaceMode.instantNoWifi,
+                    icon: Icon(Icons.bolt, size: 18),
+                    label: Text('No Wi-Fi Send'),
                   ),
                   ButtonSegment(
                     value: AppWorkspaceMode.usbCable,
                     icon: Icon(Icons.usb, size: 18),
-                    label: Text('USB Cable'),
+                    label: Text('USB Explorer'),
+                  ),
+                  ButtonSegment(
+                    value: AppWorkspaceMode.qrWireless,
+                    icon: Icon(Icons.qr_code_2, size: 18),
+                    label: Text('QR Wi-Fi'),
                   ),
                 ],
                 selected: {_mode},
                 onSelectionChanged: (next) {
                   final target = next.first;
-                  if (target == AppWorkspaceMode.qrWireless &&
+                  if (target != AppWorkspaceMode.usbCable &&
                       _mirrorManager.isRunning) {
                     unawaited(_mirrorManager.stopMirror());
                   }
@@ -722,7 +737,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               ),
               const SizedBox(width: 8),
-              if (_mode == AppWorkspaceMode.usbCable)
+              if (_mode != AppWorkspaceMode.qrWireless)
                 IconButton(
                   onPressed: () => _usbManager.scanDevices(force: true),
                   icon: const Icon(Icons.refresh),
@@ -736,38 +751,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 8),
             ],
           ),
-          body: _mode == AppWorkspaceMode.qrWireless
-              ? QrTransferPanel(
-                  server: _qrServer,
-                  enableNativeServices: widget.enableNativeServices,
-                )
-              : Column(
-                  children: [
-                    _buildConnectedDevicesStrip(),
-                    Expanded(
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 370,
-                            child: _buildMirrorAndDropPanel(mirrorRunning),
+          body: switch (_mode) {
+            AppWorkspaceMode.instantNoWifi => InstantSendPanel(
+                usbManager: _usbManager,
+                bluetoothService: _bluetoothService,
+                enableNativeServices: widget.enableNativeServices,
+                onSwitchToUsbExplorer: () =>
+                    setState(() => _mode = AppWorkspaceMode.usbCable),
+              ),
+            AppWorkspaceMode.qrWireless => QrTransferPanel(
+                server: _qrServer,
+                enableNativeServices: widget.enableNativeServices,
+              ),
+            AppWorkspaceMode.usbCable => Column(
+                children: [
+                  _buildConnectedDevicesStrip(),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 370,
+                          child: _buildMirrorAndDropPanel(mirrorRunning),
+                        ),
+                        const VerticalDivider(width: 1),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Expanded(child: _buildPhoneExplorerPanel()),
+                              if (_batchProgress.active)
+                                _buildBulkProgressBanner(),
+                              if (_transfers.isNotEmpty)
+                                _buildTransferActivityDrawer(),
+                            ],
                           ),
-                          const VerticalDivider(width: 1),
-                          Expanded(
-                            child: Column(
-                              children: [
-                                Expanded(child: _buildPhoneExplorerPanel()),
-                                if (_batchProgress.active)
-                                  _buildBulkProgressBanner(),
-                                if (_transfers.isNotEmpty)
-                                  _buildTransferActivityDrawer(),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
+          },
         ),
       ),
     );

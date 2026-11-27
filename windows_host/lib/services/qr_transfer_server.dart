@@ -145,7 +145,68 @@ class QrTransferServer {
 
   String buildQrUrl(String hostIp) {
     final pNum = _server?.port ?? defaultPort;
-    return 'http://$hostIp:$pNum/?token=$_token';
+    return 'http://$hostIp:$pNum/s/$_token';
+  }
+
+  /// Checks whether Windows Firewall has an inbound rule for this executable
+  /// and whether any active interface is marked as Public.
+  Future<({bool hasFirewallRule, bool isPublicNetwork, String profileLabel})>
+      checkWindowsFirewallStatus() async {
+    if (!Platform.isWindows) {
+      return (
+        hasFirewallRule: true,
+        isPublicNetwork: false,
+        profileLabel: 'Private',
+      );
+    }
+    var hasRule = false;
+    var isPublic = false;
+    var profileLabel = 'Unknown';
+    try {
+      final fwRes = await Process.run(
+        'netsh',
+        const ['advfirewall', 'firewall', 'show', 'rule', 'name=DeviceBridge'],
+      );
+      final exePath = Platform.resolvedExecutable.toLowerCase();
+      final stdoutLower = fwRes.stdout.toString().toLowerCase();
+      hasRule = fwRes.exitCode == 0 && stdoutLower.contains(exePath);
+    } catch (_) {}
+
+    try {
+      final netRes = await Process.run('powershell', const [
+        '-NoProfile',
+        '-Command',
+        "(Get-NetConnectionProfile | Select-Object -ExpandProperty NetworkCategory) -join ','",
+      ]);
+      final raw = netRes.stdout.toString().trim();
+      if (raw.isNotEmpty) {
+        profileLabel = raw;
+        isPublic = raw.toLowerCase().contains('public');
+      }
+    } catch (_) {}
+
+    return (
+      hasFirewallRule: hasRule,
+      isPublicNetwork: isPublic,
+      profileLabel: profileLabel,
+    );
+  }
+
+  /// Prompts Windows UAC to add an inbound firewall rule allowing DeviceBridge on Private & Public Wi-Fi.
+  Future<bool> requestFirewallAllowRule() async {
+    if (!Platform.isWindows) return true;
+    final exe = Platform.resolvedExecutable.replaceAll('"', '');
+    final cmdArgs =
+        '/c netsh advfirewall firewall delete rule name="DeviceBridge" >nul 2>&1 & '
+        'netsh advfirewall firewall add rule name="DeviceBridge" dir=in action=allow '
+        'program="$exe" enable=yes profile=any';
+    final escapedArgs = cmdArgs.replaceAll("'", "''");
+    final res = await Process.run('powershell', [
+      '-NoProfile',
+      '-Command',
+      "Start-Process -FilePath 'cmd.exe' -ArgumentList '$escapedArgs' -Verb RunAs -Wait",
+    ]);
+    return res.exitCode == 0;
   }
 
   Future<void> setReceiveDirectory(Directory dir) async {
@@ -286,9 +347,13 @@ class QrTransferServer {
 
   Future<void> _handleHttpRequest(HttpRequest request) async {
     final uri = request.uri;
-    final suppliedToken = uri.queryParameters['token'] ??
-        request.headers.value('x-devicebridge-token') ??
-        '';
+    final pathToken = uri.path.startsWith('/s/')
+        ? uri.path.substring('/s/'.length).split('/').first
+        : '';
+    final suppliedToken = (uri.queryParameters['token'] ??
+            request.headers.value('x-devicebridge-token') ??
+            pathToken)
+        .trim();
 
     if (suppliedToken != _token) {
       request.response.statusCode = HttpStatus.forbidden;
@@ -304,7 +369,8 @@ class QrTransferServer {
       return;
     }
 
-    if (uri.path == '/' && request.method == 'GET') {
+    if ((uri.path == '/' || uri.path.startsWith('/s/')) &&
+        request.method == 'GET') {
       request.response.statusCode = HttpStatus.ok;
       request.response.headers.contentType =
           ContentType('text', 'html', charset: 'utf-8');
@@ -626,7 +692,7 @@ class QrTransferServer {
   static String _generateToken() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
     final rng = Random.secure();
-    return List.generate(12, (_) => chars[rng.nextInt(chars.length)]).join();
+    return List.generate(8, (_) => chars[rng.nextInt(chars.length)]).join();
   }
 
   String _buildPortalHtml() => _portalHtmlTemplate;
@@ -721,7 +787,8 @@ const String _portalHtmlTemplate = r'''<!doctype html>
 
   <script>
     const params = new URLSearchParams(location.search);
-    const token = params.get('token') || '';
+    const pathMatch = location.pathname.match(/^\/s\/([^/?#]+)/);
+    const token = params.get('token') || (pathMatch ? decodeURIComponent(pathMatch[1]) : '');
     const pill = document.getElementById('connPill');
     const outboxList = document.getElementById('outboxList');
     const downloadAllBtn = document.getElementById('downloadAllBtn');
