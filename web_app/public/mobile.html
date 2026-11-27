@@ -791,15 +791,30 @@
       return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="rgba(253,164,175,0.18)" stroke="#fda4af" stroke-width="1.8"/><path d="M9 9L15 15M15 9L9 15" stroke="#fda4af" stroke-width="2" stroke-linecap="round"/></svg>`;
     }
 
-    function addSentRow(name, bytes, ok, signed, err) {
+    function createSentRow(name, bytes) {
       const row = document.createElement('div');
       row.className = 'row';
-      row.innerHTML = '<div class="meta"><div class="name"></div><div class="sub"></div></div><div>' + statusSvg(ok) + '</div>';
+      row.innerHTML = '<div class="meta"><div class="name"></div><div class="sub"></div><div class="cute-bar"><div class="cute-bar-fill" style="width:2%;"></div></div></div><div class="row-stat"></div>';
       row.querySelector('.name').textContent = name;
-      row.querySelector('.sub').textContent = ok
-        ? (fmtBytes(bytes) + (signed ? ' • Verified HMAC-SHA256' : ' • Sent to PC'))
-        : (err || 'Failed');
+      const sub = row.querySelector('.sub');
+      const barWrap = row.querySelector('.cute-bar');
+      const fill = row.querySelector('.cute-bar-fill');
+      const iconSlot = row.querySelector('.row-stat');
+      sub.textContent = 'Queued • ' + fmtBytes(bytes);
       sentList.prepend(row);
+      return {
+        setPhase(text, pct) {
+          sub.textContent = text;
+          if (typeof pct === 'number') fill.style.width = pct + '%';
+        },
+        finish(ok, signed, err) {
+          barWrap.remove();
+          iconSlot.innerHTML = statusSvg(ok);
+          sub.textContent = ok
+            ? (fmtBytes(bytes) + (signed ? ' • Verified HMAC-SHA256' : ' • Sent to PC'))
+            : (err || 'Failed');
+        },
+      };
     }
 
     function sendXhr(url, blob, extraHeaders, onProgress) {
@@ -869,23 +884,33 @@
       progressArea.style.display = 'block';
       const totalBytes = files.reduce((s, f) => s + f.size, 0);
       const perFileLoaded = new Array(files.length).fill(0);
+      // Create all live file rows immediately so there is zero delay in the sender view
+      const rowUis = files.map((file) => createSentRow(file.name, file.size));
       let completed = 0;
       let succeeded = 0;
       let failed = 0;
       let nextIdx = 0;
       const started = performance.now();
-      let lastUiUpdate = 0;
+      let rafPending = false;
+      let latestActiveName = files[0].name;
 
-      function update(activeName, phase, force = false) {
-        const now = performance.now();
-        if (!force && now - lastUiUpdate < 80) return;
-        lastUiUpdate = now;
-        const loaded = perFileLoaded.reduce((a, b) => a + b, 0);
-        const pct = totalBytes > 0 ? Math.round((loaded / totalBytes) * 100) : Math.round((completed / files.length) * 100);
-        const sec = Math.max(0.1, (now - started) / 1000);
-        const speed = fmtBytes(Math.round(loaded / sec)) + '/s';
-        progressFill.style.width = pct + '%';
-        progressText.textContent = (phase || ('Sending ' + completed + '/' + files.length + ' (' + fmtBytes(loaded) + ' / ' + fmtBytes(totalBytes) + ' • ' + speed + ')')) + ' • ' + activeName;
+      function scheduleSummaryUpdate(activeName, phase) {
+        latestActiveName = activeName;
+        if (phase) {
+          progressText.textContent = phase + ' • ' + activeName;
+          return;
+        }
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => {
+          rafPending = false;
+          const loaded = perFileLoaded.reduce((a, b) => a + b, 0);
+          const pct = totalBytes > 0 ? Math.min(100, Math.round((loaded / totalBytes) * 100)) : Math.round((completed / files.length) * 100);
+          const sec = Math.max(0.1, (performance.now() - started) / 1000);
+          const speed = fmtBytes(Math.round(loaded / sec)) + '/s';
+          progressFill.style.width = pct + '%';
+          progressText.textContent = 'Sending ' + completed + '/' + files.length + ' (' + fmtBytes(loaded) + ' / ' + fmtBytes(totalBytes) + ' • ' + speed + ') • ' + latestActiveName;
+        });
       }
 
       async function worker() {
@@ -893,27 +918,36 @@
           const i = nextIdx++;
           if (i >= files.length) return;
           const file = files[i];
+          const ui = rowUis[i];
           try {
-            update(file.name, 'Signing ' + file.name, true);
+            ui.setPhase('Signing...', 8);
+            scheduleSummaryUpdate(file.name, 'Signing ' + file.name);
             const sigHeaders = await computeSignatureHeaders(file);
+            let lastRowDraw = 0;
             await uploadSingleFile(file, sigHeaders, (loaded) => {
               perFileLoaded[i] = loaded;
-              update(file.name);
+              scheduleSummaryUpdate(file.name);
+              const now = performance.now();
+              if (now - lastRowDraw >= 60 || loaded >= file.size) {
+                lastRowDraw = now;
+                const pct = file.size > 0 ? Math.min(100, Math.round((loaded / file.size) * 100)) : 50;
+                ui.setPhase('Uploading ' + pct + '% • ' + fmtBytes(loaded) + ' / ' + fmtBytes(file.size), pct);
+              }
             });
             perFileLoaded[i] = file.size;
             completed++;
             succeeded++;
-            update(file.name, '', true);
-            addSentRow(file.name, file.size, true, Boolean(sigHeaders['x-file-signature']), '');
+            scheduleSummaryUpdate(file.name);
+            ui.finish(true, Boolean(sigHeaders['x-file-signature']), '');
           } catch (err) {
             completed++;
             failed++;
-            addSentRow(file.name, file.size, false, false, err.message);
+            ui.finish(false, false, err.message);
           }
         }
       }
 
-      await Promise.all(Array.from({ length: Math.min(2, files.length) }, worker));
+      await Promise.all(Array.from({ length: Math.min(4, files.length) }, worker));
       progressFill.style.width = succeeded > 0 ? '100%' : '0%';
       if (failed === 0) {
         progressText.textContent = 'Sent ' + succeeded + ' signed file(s) (' + fmtBytes(totalBytes) + ')';

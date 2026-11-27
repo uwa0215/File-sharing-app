@@ -1545,28 +1545,49 @@
 
       const outbox = st.outbox || [];
       outboxCount.textContent = outbox.length;
-      outboxList.innerHTML = '';
-      for (const f of outbox) {
-        const row = document.createElement('div');
-        row.className = 'item-row';
-        row.innerHTML = '<div class="thumb">' + fileIconSvg(f.name) + '</div>';
-        const meta = document.createElement('div');
-        meta.className = 'item-meta';
-        meta.innerHTML = '<div class="item-name"><span></span></div><div class="item-sub"></div>';
-        meta.querySelector('.item-name span').textContent = f.name;
-        const badge = document.createElement('span');
-        badge.className = 'sig-badge';
-        badge.innerHTML = verifiedBadgeSvg() + '<span>Signed</span>';
-        meta.querySelector('.item-name').appendChild(badge);
-        meta.querySelector('.item-sub').textContent =
-          fmtBytes(f.sizeBytes) + (f.sha256 ? ' • SHA-256 ' + f.sha256.slice(0, 8) : '');
-        const rm = document.createElement('button');
-        rm.className = 'btn secondary';
-        rm.textContent = 'Remove';
-        rm.onclick = () => fetch(withRoomParams('/api/desktop/outbox/' + encodeURIComponent(f.id)), { method: 'DELETE' });
-        row.appendChild(meta);
-        row.appendChild(rm);
-        outboxList.appendChild(row);
+
+      // Keyed reconciliation preserves pending upload progress rows and avoids DOM flicker
+      const existingOutbox = new Map();
+      for (const el of Array.from(outboxList.children)) {
+        if (el.dataset && el.dataset.outId) existingOutbox.set(el.dataset.outId, el);
+      }
+      const activeOutIds = new Set();
+      const pendingNodes = Array.from(outboxList.querySelectorAll('[data-pending-id]'));
+
+      for (let i = 0; i < outbox.length; i++) {
+        const f = outbox[i];
+        activeOutIds.add(f.id);
+        let row = existingOutbox.get(f.id);
+        if (!row) {
+          row = document.createElement('div');
+          row.className = 'item-row';
+          row.dataset.outId = f.id;
+          row.innerHTML = '<div class="thumb">' + fileIconSvg(f.name) + '</div>';
+          const meta = document.createElement('div');
+          meta.className = 'item-meta';
+          meta.innerHTML = '<div class="item-name"><span></span></div><div class="item-sub"></div>';
+          meta.querySelector('.item-name span').textContent = f.name;
+          const badge = document.createElement('span');
+          badge.className = 'sig-badge';
+          badge.innerHTML = verifiedBadgeSvg() + '<span>Signed</span>';
+          meta.querySelector('.item-name').appendChild(badge);
+          meta.querySelector('.item-sub').textContent =
+            fmtBytes(f.sizeBytes) + (f.sha256 ? ' • SHA-256 ' + f.sha256.slice(0, 8) : '');
+          const rm = document.createElement('button');
+          rm.className = 'btn secondary';
+          rm.textContent = 'Remove';
+          rm.onclick = () => fetch(withRoomParams('/api/desktop/outbox/' + encodeURIComponent(f.id)), { method: 'DELETE' }).catch(() => {});
+          row.appendChild(meta);
+          row.appendChild(rm);
+        }
+        const targetPos = pendingNodes.length + i;
+        const currentAtIdx = outboxList.children[targetPos] || null;
+        if (currentAtIdx !== row) {
+          outboxList.insertBefore(row, currentAtIdx);
+        }
+      }
+      for (const [id, el] of existingOutbox) {
+        if (!activeOutIds.has(id)) el.remove();
       }
 
       renderTransfers(st.transfers || []);
@@ -1607,6 +1628,22 @@
 
     optApprove.onchange = () => updateSecurity({ requireApproval: optApprove.checked });
 
+    function uploadShareXhr(file, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', withRoomParams('/api/desktop/share-file?name=' + encodeURIComponent(file.name)));
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable && onProgress) onProgress(ev.loaded, ev.total);
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error('HTTP ' + xhr.status));
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send(file);
+      });
+    }
+
     async function shareFiles(fileList) {
       const files = Array.from(fileList || []);
       if (!files.length) return;
@@ -1617,22 +1654,62 @@
       const origLabel = btnLabel ? btnLabel.textContent : 'Choose Files';
       pickShareBtn.disabled = true;
 
+      // Render optimistic sender rows immediately (0ms delay)
+      const pendingRows = files.map((file, idx) => {
+        const row = document.createElement('div');
+        row.className = 'item-row';
+        row.dataset.pendingId = 'p_' + Date.now() + '_' + idx;
+        row.innerHTML = '<div class="thumb">' + fileIconSvg(file.name) + '</div>';
+        const meta = document.createElement('div');
+        meta.className = 'item-meta';
+        meta.innerHTML = '<div class="item-name"><span></span></div><div class="item-sub">Queued • ' + fmtBytes(file.size) + '</div><div class="cute-bar"><div class="cute-bar-fill" style="width:4%;"></div></div>';
+        meta.querySelector('.item-name span').textContent = file.name;
+        row.appendChild(meta);
+        outboxList.prepend(row);
+        return {
+          row,
+          sub: meta.querySelector('.item-sub'),
+          fill: meta.querySelector('.cute-bar-fill'),
+        };
+      });
+
       async function worker() {
         while (true) {
           const idx = nextIdx++;
           if (idx >= files.length) return;
           const file = files[idx];
+          const ui = pendingRows[idx];
           if (btnLabel) btnLabel.textContent = 'Sharing ' + (sent + failed + 1) + '/' + files.length + '...';
-          const res = await fetch(withRoomParams('/api/desktop/share-file?name=' + encodeURIComponent(file.name)), {
-            method: 'POST',
-            body: file,
-          }).catch(() => null);
-          if (res && res.ok) sent++;
-          else failed++;
+          try {
+            ui.sub.textContent = 'Sending • 0% of ' + fmtBytes(file.size);
+            let lastDraw = 0;
+            await uploadShareXhr(file, (loaded, total) => {
+              const now = performance.now();
+              if (now - lastDraw < 60 && loaded < total) return;
+              lastDraw = now;
+              const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 50;
+              ui.fill.style.width = pct + '%';
+              ui.sub.textContent = 'Sending • ' + pct + '% of ' + fmtBytes(file.size);
+            });
+            sent++;
+            ui.done = true;
+            ui.fill.style.width = '100%';
+            ui.sub.textContent = 'Signed & ready';
+          } catch (err) {
+            failed++;
+            ui.fill.parentElement?.remove();
+            ui.sub.textContent = 'Failed: ' + (err?.message || 'error');
+            setTimeout(() => ui.row.remove(), 3500);
+          }
         }
       }
 
-      await Promise.all(Array.from({ length: Math.min(3, files.length) }, worker));
+      await Promise.all(Array.from({ length: Math.min(4, files.length) }, worker));
+      const latestState = await safeFetchJson('/api/desktop/state');
+      for (const ui of pendingRows) {
+        if (ui.done) ui.row.remove();
+      }
+      if (latestState) renderState(latestState);
       pickShareBtn.disabled = false;
       if (btnLabel) btnLabel.textContent = origLabel;
       shareInput.value = '';

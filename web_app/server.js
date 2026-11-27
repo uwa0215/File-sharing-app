@@ -329,6 +329,16 @@ function createTransferRoom({
   let cachedQrSvg = '';
   let transfersBroadcastTimer = null;
   let lastTransfersEmitAt = 0;
+  let outboxBroadcastTimer = null;
+
+  function scheduleOutboxBroadcast() {
+    if (outboxBroadcastTimer) return;
+    outboxBroadcastTimer = setTimeout(() => {
+      outboxBroadcastTimer = null;
+      broadcastMobileState();
+      void broadcastFullState();
+    }, 60);
+  }
 
   function touch() {
     lastActiveAt = Date.now();
@@ -653,8 +663,7 @@ function createTransferRoom({
         sha256,
         signature,
       });
-      broadcastMobileState();
-      await broadcastFullState(req);
+      scheduleOutboxBroadcast();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, id, sha256, signature }));
       return;
@@ -666,8 +675,7 @@ function createTransferRoom({
       if (item) {
         outboxFiles.delete(id);
         fsp.unlink(item.filePath).catch(() => {});
-        broadcastMobileState();
-        await broadcastFullState(req);
+        scheduleOutboxBroadcast();
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
@@ -1178,6 +1186,7 @@ function createTransferRoom({
 
   async function close() {
     clearTimeout(transfersBroadcastTimer);
+    clearTimeout(outboxBroadcastTimer);
     for (const ws of desktopSockets) ws.close();
     for (const c of mobileClients.values()) c.ws.close();
     desktopSockets.clear();
