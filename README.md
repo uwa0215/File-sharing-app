@@ -1,20 +1,23 @@
-# DeviceBridge (Windows App)
+# DeviceBridge QR (Signed Multi-User Web File Sharing)
 
-**DeviceBridge** is a native Windows desktop application (`windows_host`) for fast bulk file transfers across **Android, iPhone/iPad, and laptops** — combining **QR Code Transfer**, **Instant Bluetooth (No Wi-Fi)**, and **Plug-and-Play USB** in one screen.
-
----
-
-## Transfer Modes
-
-### 1. `Easy Transfer (QR + Direct)` *(Default Launch Screen)*
-- **Scannable QR Code + Auto-Opening Transfer Window:** Scan the QR code with iPhone or Android Camera (works over Windows Mobile Hotspot `192.168.137.1` with no router needed, or private Wi-Fi), and click **`Allow Windows Firewall Access`** in 1 click if Windows marks your network as Public.
-- **Instant Bluetooth & USB Target Chips Right Beside the QR Code:** Select any paired Bluetooth device or plugged-in USB phone in **Transfer Target** and drag-and-drop files/folders to send immediately without Wi-Fi.
-
-### 2. `USB Explorer & Mirror`
-- Browse Android (`ADB` / `MTP`) and iPhone/iPad (`Apple PTP` `DCIM`) folders directly over USB, drag files or multi-file selections onto Windows Desktop, export in bulk, and mirror Android live (`scrcpy`).
+**DeviceBridge QR** is a responsive, animated **QR-based web application** (`web_app/`) for transferring files between phones and computers — supporting **Public Multi-Room Cloud Hosting** (Render, Railway, Docker) and **Local PC + Cloudflare Tunnel** mode.
 
 ---
 
-## Documentation
+## Features & Security
 
-Read the full user tutorial: **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**
+- **Automatic HMAC-SHA256 File Signing:** Every upload and download is SHA-256 hashed and verified with a 256-bit per-room HMAC key; tampered or unsigned payloads are rejected (`403`).
+- **Approve Device Before Transfer:** Optional gate holding scanned phones until you tap **Allow** or **Block**.
+- **Isolated Multi-User Cloud Rooms:** When deployed publicly (`PORT` / `CLOUD_MODE=1`), each browser visitor receives an isolated temporary pairing room (`roomId` + `hostKey`), auto-cleaned after inactivity (`2h` TTL).
+- **Large Video Support:** Automatically splits uploads over `25 MB` into streamed verified chunks.
+
+---
+
+## Deploy for Everyone (Render / Railway / Docker)
+
+See [`docs/DEPLOY.md`](docs/DEPLOY.md) for step-by-step deployment instructions using [`render.yaml`](render.yaml), [`railway.json`](railway.json), or [`Dockerfile`](Dockerfile).
+
+## Run Locally on PC
+
+1. Run [`start_qr_web.bat`](start_qr_web.bat) (or `cd web_app && npm install && node server.js`).
+2. Open **`http://localhost:3000`** in your browser and scan the **HTTPS QR code** with your phone camera.

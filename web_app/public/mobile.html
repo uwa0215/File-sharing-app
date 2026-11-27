@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <title>Send Signed Files — DeviceBridge</title>
+  <style>
+    :root {
+      --bg: #0f0d23;
+      --surface: rgba(24, 21, 51, 0.84);
+      --row: rgba(39, 34, 77, 0.78);
+      --border: rgba(255, 255, 255, 0.12);
+      --pink: #ff85c0;
+      --violet: #a78bfa;
+      --sky: #7dd3fc;
+      --mint: #6ee7b7;
+      --butter: #fde68a;
+      --red: #fda4af;
+      --text: #fff9fd;
+      --muted: #b6b1d6;
+      --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: "Quicksand", "Nunito", "Segoe UI Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top center, #1b1742 0%, var(--bg) 68%);
+      color: var(--text);
+      padding: 16px 14px calc(26px + env(safe-area-inset-bottom));
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Cozy animated pastel auroras */
+    .bg-orbs {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(60px);
+      animation: floatOrb 13s ease-in-out infinite alternate;
+    }
+    .orb-1 { width: 250px; height: 250px; background: rgba(255, 133, 192, 0.18); top: -70px; left: -60px; }
+    .orb-2 { width: 280px; height: 280px; background: rgba(125, 211, 252, 0.16); bottom: -70px; right: -50px; animation-delay: -6s; }
+
+    @keyframes floatOrb {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(24px, -20px) scale(1.1); }
+    }
+    @keyframes bobble {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-4px) rotate(-1.5deg); }
+    }
+    @keyframes floatSlow {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    @keyframes arrowUpFloat {
+      0%, 100% { transform: translateY(2px); }
+      50% { transform: translateY(-5px); }
+    }
+    @keyframes arrowDownFloat {
+      0%, 100% { transform: translateY(-3px); }
+      50% { transform: translateY(3px); }
+    }
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.35; transform: scale(0.8) rotate(0deg); }
+      50% { opacity: 1; transform: scale(1.2) rotate(16deg); }
+    }
+    @keyframes blinkEyes {
+      0%, 92%, 100% { transform: scaleY(1); }
+      96% { transform: scaleY(0.1); }
+    }
+    @keyframes popIn {
+      0% { opacity: 0; transform: translateY(10px) scale(0.96); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes pulseRing {
+      0% { transform: scale(0.85); opacity: 0.85; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+    @keyframes stripeSlide {
+      from { background-position: 0 0; }
+      to { background-position: 40px 0; }
+    }
+    @keyframes sparkleFly {
+      0% { opacity: 1; transform: translate(0, 0) scale(0.6) rotate(0deg); }
+      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.2) rotate(180deg); }
+    }
+
+    .anim-float { animation: floatSlow 2.8s ease-in-out infinite; }
+    .anim-arrow-up { animation: arrowUpFloat 1.8s ease-in-out infinite; }
+    .anim-arrow-down { animation: arrowDownFloat 1.8s ease-in-out infinite; }
+    .anim-twinkle { transform-origin: center; animation: twinkle 2.2s ease-in-out infinite; }
+    .anim-twinkle-delay { transform-origin: center; animation: twinkle 2.2s ease-in-out 0.9s infinite; }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 4px 2px;
+    }
+    .brand {
+      font-size: 19px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: -0.01em;
+    }
+    .mascot {
+      width: 36px;
+      height: 36px;
+      animation: bobble 3.2s ease-in-out infinite;
+      filter: drop-shadow(0 4px 10px rgba(255, 133, 192, 0.35));
+    }
+    .mascot .eyes {
+      transform-origin: center 29px;
+      animation: blinkEyes 4.6s infinite;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 13px;
+      border-radius: 999px;
+      background: rgba(110, 231, 183, 0.16);
+      color: var(--mint);
+      border: 1px solid rgba(110, 231, 183, 0.42);
+      transition: all 0.3s var(--spring);
+    }
+    .pill.offline {
+      background: rgba(253, 230, 138, 0.16);
+      color: var(--butter);
+      border-color: rgba(253, 230, 138, 0.4);
+    }
+    .pulse-dot {
+      position: relative;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .pulse-dot::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulseRing 1.8s ease-out infinite;
+    }
+
+    .card {
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 18px;
+      animation: popIn 0.4s var(--spring);
+      box-shadow: 0 16px 40px rgba(4, 3, 18, 0.38);
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .card-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex: 1 1 180px;
+    }
+    .card-title-wrap h2 { min-width: 0; overflow-wrap: anywhere; }
+    .icon-badge {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(255, 133, 192, 0.18), rgba(125, 211, 252, 0.18));
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      flex-shrink: 0;
+    }
+
+    h2 { margin: 0; font-size: 16.5px; font-weight: 800; }
+    .muted { color: var(--muted); font-size: 13px; margin: 0 0 14px; line-height: 1.45; }
+
+    .send-box {
+      border: 2px dashed rgba(255, 133, 192, 0.5);
+      border-radius: 20px;
+      padding: 26px 16px;
+      text-align: center;
+      background: linear-gradient(155deg, rgba(255, 133, 192, 0.08), rgba(125, 211, 252, 0.06));
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      transition: transform 0.25s var(--spring), background 0.2s, border-color 0.2s;
+    }
+    .send-box:hover, .send-box.active {
+      background: linear-gradient(155deg, rgba(255, 133, 192, 0.18), rgba(125, 211, 252, 0.14));
+      border-color: var(--pink);
+      transform: scale(1.015);
+    }
+
+    .big-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 0;
+      border-radius: 16px;
+      padding: 13px 26px;
+      min-height: 48px;
+      font-size: 15px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--pink), var(--violet));
+      color: #180d2d;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(255, 133, 192, 0.28);
+      transition: transform 0.2s var(--spring);
+    }
+    .big-btn:active { transform: scale(0.95); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 0;
+      border-radius: 13px;
+      padding: 9px 15px;
+      min-height: 38px;
+      font-size: 12.5px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--sky), var(--mint));
+      color: #082f49;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 0.2s var(--spring);
+    }
+    .btn:active { transform: scale(0.95); }
+    .btn.secondary { background: rgba(255, 255, 255, 0.09); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.1); }
+
+    input.pin-input {
+      width: 100%;
+      font-size: 24px;
+      letter-spacing: 0.28em;
+      text-align: center;
+      font-weight: 800;
+      padding: 14px;
+      border-radius: 16px;
+      border: 1.5px solid var(--border);
+      background: rgba(15, 13, 33, 0.85);
+      color: var(--sky);
+      margin-bottom: 14px;
+    }
+
+    .cute-bar {
+      width: 100%;
+      height: 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .cute-bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--pink), var(--sky), var(--mint));
+      background-size: 40px 100%;
+      animation: stripeSlide 1.2s linear infinite;
+      transition: width 0.2s ease;
+    }
+
+    .list { display: flex; flex-direction: column; gap: 9px; margin-top: 12px; }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 11px 13px;
+      border-radius: 16px;
+      background: var(--row);
+      border: 1px solid var(--border);
+      animation: popIn 0.35s var(--spring);
+    }
+    .meta { min-width: 0; flex: 1 1 160px; }
+    .name {
+      font-size: 13.5px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .sig-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--mint);
+      background: rgba(110, 231, 183, 0.14);
+      border: 1px solid rgba(110, 231, 183, 0.32);
+      padding: 5px 11px;
+      border-radius: 999px;
+      margin-bottom: 10px;
+    }
+
+    .sparkle {
+      position: fixed;
+      pointer-events: none;
+      z-index: 999;
+      animation: sparkleFly 1.1s ease-out forwards;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+  </div>
+
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <svg class="mascot" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <path d="M16 44C10 44 6 39 6 33C6 27.8 9.8 23.5 14.7 22.4C16.7 14.8 23.6 9 32 9C41.8 9 49.8 16.6 50.4 26.2C55.2 27.1 58.8 31.3 58.8 36.4C58.8 42.1 54.2 46.8 48.4 46.8H16V44Z" fill="url(#mobCloud)"/>
+          <g class="eyes">
+            <circle cx="24" cy="29" r="3" fill="#1e1035"/>
+            <circle cx="40" cy="29" r="3" fill="#1e1035"/>
+            <circle cx="25" cy="28" r="1" fill="#fff"/>
+            <circle cx="41" cy="28" r="1" fill="#fff"/>
+          </g>
+          <ellipse cx="19" cy="33" rx="3.5" ry="2" fill="#ff85c0" opacity="0.65"/>
+          <ellipse cx="45" cy="33" rx="3.5" ry="2" fill="#ff85c0" opacity="0.65"/>
+          <path d="M28 33.5C29.3 35.8 34.7 35.8 36 33.5" stroke="#1e1035" stroke-width="2.4" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="mobCloud" x1="6" y1="9" x2="58" y2="47" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#FFE4F2"/>
+              <stop offset="0.55" stop-color="#E0F2FE"/>
+              <stop offset="1" stop-color="#D1FAE5"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span>DeviceBridge</span>
+      </div>
+      <div id="pill" class="pill offline"><span class="pulse-dot"></span><span id="pillText">Connecting...</span></div>
+    </div>
+
+    <!-- PIN Lock Card (hidden unless enabled via API) -->
+    <div id="pinCard" class="card" style="display:none;">
+      <div class="card-head">
+        <div class="card-title-wrap">
+          <div class="icon-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="anim-float" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="3" stroke="#7dd3fc" stroke-width="1.8" fill="rgba(125,211,252,0.16)"/>
+              <path d="M8 11V8C8 5.79 9.79 4 12 4C14.21 4 16 5.79 16 8V11" stroke="#ff85c0" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h2>Enter Security PIN</h2>
+        </div>
+      </div>
+      <p class="muted">Type the pairing PIN to unlock signed file transfers.</p>
+      <input id="pinInput" class="pin-input" type="tel" maxlength="6" placeholder="000000" />
+      <button id="unlockPinBtn" class="big-btn" style="width:100%;" type="button">Unlock Session</button>
+      <div id="pinErr" class="sub" style="color:var(--red);margin-top:10px;text-align:center;"></div>
+    </div>
+
+    <!-- Waiting Approval Card -->
+    <div id="approvalCard" class="card" style="display:none;">
+      <div class="card-head">
+        <div class="card-title-wrap">
+          <div class="icon-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="anim-float" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="#fde68a" stroke-width="1.8" fill="rgba(253,230,138,0.14)"/>
+              <path d="M12 7V12L15 14" stroke="#fde68a" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h2>Waiting for Approval</h2>
+        </div>
+      </div>
+      <p id="approvalMsg" class="muted" style="margin-bottom:0;">Please tap <b>Allow</b> next to this device on the desktop screen to start sending files.</p>
+    </div>
+
+    <!-- Transfer Cards -->
+    <div id="transferArea" style="display:flex;flex-direction:column;gap:16px;">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title-wrap">
+            <div class="icon-badge">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <g class="anim-arrow-up">
+                  <path d="M12 16V6M12 6L8.5 9.5M12 6L15.5 9.5" stroke="#ff85c0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </g>
+                <path d="M4 17V18C4 19.1 4.9 20 6 20H18C19.1 20 20 19.1 20 18V17" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h2>Send Files to Computer</h2>
+          </div>
+        </div>
+
+        <div id="sigNote" class="sig-note">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 2L4 5.5V11.5C4 16.8 7.4 21.6 12 23C16.6 21.6 20 16.8 20 11.5V5.5L12 2Z" stroke="#6ee7b7" stroke-width="2"/>
+            <path d="M9 12L11 14L15 9.5" stroke="#6ee7b7" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span>HMAC-SHA256 Signing Active</span>
+        </div>
+
+        <p class="muted">Choose photos, videos, or documents — multiple files upload concurrently.</p>
+
+        <div id="sendBox" class="send-box">
+          <svg width="64" height="54" viewBox="0 0 64 54" fill="none" aria-hidden="true">
+            <path class="anim-float" d="M18 39C11.5 39 7 34.4 7 28.4C7 23.2 10.7 18.8 15.8 17.8C18 10.6 24.5 5.5 32.3 5.5C41.7 5.5 49.4 12.7 50 21.8C54.6 22.8 58 26.8 58 31.6C58 37.2 53.5 39 48 39H18Z" fill="url(#mobDropCloud)" stroke="rgba(255,255,255,0.28)" stroke-width="1.5"/>
+            <g class="anim-arrow-up">
+              <path d="M32 33V19M32 19L26 25M32 19L38 25" stroke="#180d2d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </g>
+            <path class="anim-twinkle" d="M53 7L54.3 10.2L57.5 11.5L54.3 12.8L53 16L51.7 12.8L48.5 11.5L51.7 10.2L53 7Z" fill="#fde68a"/>
+            <path class="anim-twinkle-delay" d="M11 8L12 10.3L14.3 11.3L12 12.3L11 14.6L10 12.3L7.7 11.3L10 10.3L11 8Z" fill="#ff85c0"/>
+            <defs>
+              <linearGradient id="mobDropCloud" x1="7" y1="6" x2="58" y2="39" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#ffd6ec"/>
+                <stop offset="0.55" stop-color="#bae6fd"/>
+                <stop offset="1" stop-color="#a7f3d0"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div>
+            <button id="pickBtn" class="big-btn" type="button">Select Files to Send</button>
+          </div>
+          <div class="muted" style="margin:0;">Photos • Videos • Files</div>
+          <input id="fileInput" type="file" multiple style="display:none;" />
+        </div>
+
+        <div id="progressArea" style="display:none;margin-top:14px;">
+          <div id="progressText" class="sub" style="color:var(--text);font-weight:700;">Signing &amp; preparing...</div>
+          <div class="cute-bar"><div id="progressFill" class="cute-bar-fill"></div></div>
+        </div>
+
+        <div id="sentList" class="list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title-wrap">
+            <div class="icon-badge">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <g class="anim-arrow-down">
+                  <path d="M12 4V14M12 14L8.5 10.5M12 14L15.5 10.5" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </g>
+                <path d="M4 15V18C4 19.1 4.9 20 6 20H18C19.1 20 20 19.1 20 18V15" stroke="#6ee7b7" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h2>Files From Computer</h2>
+          </div>
+          <button id="dlAllBtn" class="btn secondary" type="button" style="display:none;">Download All</button>
+        </div>
+        <div id="outboxList" class="list">
+          <p class="muted" style="margin:0;">No files shared from the computer right now.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CHUNK_SIZE = 25 * 1024 * 1024;
+    const pathMatch = location.pathname.match(/^\/s\/([^/?#]+)/);
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token') || (pathMatch ? decodeURIComponent(pathMatch[1]) : '');
+
+    const pill = document.getElementById('pill');
+    const pillText = document.getElementById('pillText');
+    const pinCard = document.getElementById('pinCard');
+    const pinInput = document.getElementById('pinInput');
+    const unlockPinBtn = document.getElementById('unlockPinBtn');
+    const pinErr = document.getElementById('pinErr');
+    const approvalCard = document.getElementById('approvalCard');
+    const approvalMsg = document.getElementById('approvalMsg');
+    const transferArea = document.getElementById('transferArea');
+    const sigNote = document.getElementById('sigNote');
+
+    const sendBox = document.getElementById('sendBox');
+    const pickBtn = document.getElementById('pickBtn');
+    const fileInput = document.getElementById('fileInput');
+    const progressArea = document.getElementById('progressArea');
+    const progressText = document.getElementById('progressText');
+    const progressFill = document.getElementById('progressFill');
+    const sentList = document.getElementById('sentList');
+    const outboxList = document.getElementById('outboxList');
+    const dlAllBtn = document.getElementById('dlAllBtn');
+
+    let clientId = '';
+    let sessionKey = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    let signingKeyHex = '';
+    let secState = { requireSignature: true, requirePin: false, requireApproval: false, pinVerified: true, approved: true, blocked: false };
+    let sharedFiles = [];
+
+    function burstSparkles() {
+      const colors = ['#ff85c0', '#7dd3fc', '#6ee7b7', '#fde68a', '#a78bfa'];
+      const cx = window.innerWidth * 0.5;
+      const cy = 220;
+      for (let i = 0; i < 12; i++) {
+        const el = document.createElement('div');
+        el.className = 'sparkle';
+        const color = colors[i % colors.length];
+        el.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="${color}"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/></svg>`;
+        el.style.left = cx + 'px';
+        el.style.top = cy + 'px';
+        el.style.setProperty('--dx', ((Math.random() - 0.5) * 200) + 'px');
+        el.style.setProperty('--dy', ((Math.random() - 0.7) * 150) + 'px');
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 1150);
+      }
+    }
+
+    function fmtBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+      return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+
+    function toHex(buffer) {
+      return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function fromHex(hex) {
+      const bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      }
+      return bytes;
+    }
+
+    async function computeSignatureHeaders(file) {
+      if (!secState.requireSignature || !signingKeyHex || !window.crypto || !window.crypto.subtle) {
+        return {};
+      }
+      const buf = await file.arrayBuffer();
+      const shaBuf = await crypto.subtle.digest('SHA-256', buf);
+      const shaHex = toHex(shaBuf);
+      const manifest = new TextEncoder().encode(`${file.name}|${file.size}|${shaHex}`);
+      const hmacKey = await crypto.subtle.importKey(
+        'raw',
+        fromHex(signingKeyHex),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign'],
+      );
+      const sigBuf = await crypto.subtle.sign('HMAC', hmacKey, manifest);
+      return {
+        'x-file-sha256': shaHex,
+        'x-file-signature': toHex(sigBuf),
+      };
+    }
+
+    function updateGateUi() {
+      sigNote.style.display = secState.requireSignature ? 'inline-flex' : 'none';
+      if (secState.blocked) {
+        pinCard.style.display = 'none';
+        approvalCard.style.display = 'block';
+        approvalMsg.textContent = 'This device was blocked by the desktop host.';
+        transferArea.style.display = 'none';
+        return;
+      }
+      if (secState.requirePin && !secState.pinVerified) {
+        pinCard.style.display = 'block';
+        approvalCard.style.display = 'none';
+        transferArea.style.display = 'none';
+        return;
+      }
+      if (secState.requireApproval && !secState.approved) {
+        pinCard.style.display = 'none';
+        approvalCard.style.display = 'block';
+        approvalMsg.textContent = 'Please tap Allow next to this device on the desktop screen to begin transferring files.';
+        transferArea.style.display = 'none';
+        return;
+      }
+      pinCard.style.display = 'none';
+      approvalCard.style.display = 'none';
+      transferArea.style.display = 'flex';
+    }
+
+    function statusSvg(ok) {
+      if (ok) {
+        return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="rgba(110,231,183,0.18)" stroke="#6ee7b7" stroke-width="1.8"/><path d="M8.5 12.2L10.8 14.5L15.8 9.5" stroke="#6ee7b7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      }
+      return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="rgba(253,164,175,0.18)" stroke="#fda4af" stroke-width="1.8"/><path d="M9 9L15 15M15 9L9 15" stroke="#fda4af" stroke-width="2" stroke-linecap="round"/></svg>`;
+    }
+
+    function addSentRow(name, bytes, ok, signed, err) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<div class="meta"><div class="name"></div><div class="sub"></div></div><div>' + statusSvg(ok) + '</div>';
+      row.querySelector('.name').textContent = name;
+      row.querySelector('.sub').textContent = ok
+        ? (fmtBytes(bytes) + (signed ? ' • Verified HMAC-SHA256' : ' • Sent to PC'))
+        : (err || 'Failed');
+      sentList.prepend(row);
+    }
+
+    function sendXhr(url, blob, extraHeaders, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.setRequestHeader('x-session-key', sessionKey);
+        if (clientId) xhr.setRequestHeader('x-client-id', clientId);
+        for (const [k, v] of Object.entries(extraHeaders || {})) {
+          xhr.setRequestHeader(k, v);
+        }
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable && onProgress) onProgress(ev.loaded);
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else {
+            try {
+              const j = JSON.parse(xhr.responseText);
+              reject(new Error(j.error || ('HTTP ' + xhr.status)));
+            } catch {
+              reject(new Error('HTTP ' + xhr.status));
+            }
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send(blob);
+      });
+    }
+
+    async function uploadSingleFile(file, sigHeaders, onFileLoaded) {
+      if (file.size <= CHUNK_SIZE) {
+        await sendXhr(
+          '/api/upload?token=' + encodeURIComponent(token) + '&name=' + encodeURIComponent(file.name) + '&size=' + file.size,
+          file,
+          sigHeaders,
+          onFileLoaded,
+        );
+        return;
+      }
+
+      const uploadId = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+      for (let offset = 0; offset < file.size; offset += CHUNK_SIZE) {
+        const end = Math.min(file.size, offset + CHUNK_SIZE);
+        const slice = file.slice(offset, end);
+        const isFinal = end >= file.size ? '1' : '0';
+        const url =
+          '/api/upload-chunk?token=' + encodeURIComponent(token) +
+          '&uploadId=' + encodeURIComponent(uploadId) +
+          '&offset=' + offset +
+          '&total=' + file.size +
+          '&final=' + isFinal +
+          '&name=' + encodeURIComponent(file.name);
+        await sendXhr(
+          url,
+          slice,
+          isFinal === '1' ? sigHeaders : {},
+          (chunkLoaded) => onFileLoaded(offset + chunkLoaded),
+        );
+      }
+    }
+
+    async function sendFiles(fileList) {
+      const files = Array.from(fileList || []);
+      if (!files.length) return;
+
+      progressArea.style.display = 'block';
+      const totalBytes = files.reduce((s, f) => s + f.size, 0);
+      const perFileLoaded = new Array(files.length).fill(0);
+      let completed = 0;
+      let nextIdx = 0;
+      const started = performance.now();
+
+      function update(activeName, phase) {
+        const loaded = perFileLoaded.reduce((a, b) => a + b, 0);
+        const pct = totalBytes > 0 ? Math.round((loaded / totalBytes) * 100) : Math.round((completed / files.length) * 100);
+        const sec = Math.max(0.1, (performance.now() - started) / 1000);
+        const speed = fmtBytes(Math.round(loaded / sec)) + '/s';
+        progressFill.style.width = pct + '%';
+        progressText.textContent = (phase || ('Sending ' + completed + '/' + files.length + ' (' + fmtBytes(loaded) + ' / ' + fmtBytes(totalBytes) + ' • ' + speed + ')')) + ' • ' + activeName;
+      }
+
+      async function worker() {
+        while (true) {
+          const i = nextIdx++;
+          if (i >= files.length) return;
+          const file = files[i];
+          try {
+            update(file.name, 'Signing ' + file.name);
+            const sigHeaders = await computeSignatureHeaders(file);
+            await uploadSingleFile(file, sigHeaders, (loaded) => {
+              perFileLoaded[i] = loaded;
+              update(file.name);
+            });
+            perFileLoaded[i] = file.size;
+            completed++;
+            update(file.name);
+            addSentRow(file.name, file.size, true, Boolean(sigHeaders['x-file-signature']), '');
+          } catch (err) {
+            completed++;
+            addSentRow(file.name, file.size, false, false, err.message);
+          }
+        }
+      }
+
+      await Promise.all(Array.from({ length: Math.min(3, files.length) }, worker));
+      progressFill.style.width = '100%';
+      progressText.textContent = 'Sent ' + files.length + ' signed file(s) (' + fmtBytes(totalBytes) + ')';
+      burstSparkles();
+      fileInput.value = '';
+    }
+
+    function downloadHref(fileId) {
+      return '/api/download/' + encodeURIComponent(fileId) +
+        '?token=' + encodeURIComponent(token) +
+        '&session=' + encodeURIComponent(sessionKey) +
+        '&cid=' + encodeURIComponent(clientId);
+    }
+
+    function renderOutbox(files) {
+      sharedFiles = files || [];
+      if (!sharedFiles.length) {
+        dlAllBtn.style.display = 'none';
+        outboxList.innerHTML = '<p class="muted" style="margin:0;">No files shared from the computer right now.</p>';
+        return;
+      }
+      dlAllBtn.style.display = sharedFiles.length > 1 ? 'inline-flex' : 'none';
+      outboxList.innerHTML = '';
+      for (const f of sharedFiles) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.innerHTML = '<div class="name"></div><div class="sub"></div>';
+        meta.querySelector('.name').textContent = f.name;
+        meta.querySelector('.sub').textContent = fmtBytes(f.sizeBytes || 0) + (f.sha256 ? ' • Signed SHA-256' : '');
+        const dl = document.createElement('a');
+        dl.className = 'btn';
+        dl.textContent = 'Download';
+        dl.href = downloadHref(f.id);
+        dl.download = f.name;
+        row.appendChild(meta);
+        row.appendChild(dl);
+        outboxList.appendChild(row);
+      }
+    }
+
+    dlAllBtn.onclick = () => {
+      sharedFiles.forEach((f, idx) => {
+        setTimeout(() => {
+          const a = document.createElement('a');
+          a.href = downloadHref(f.id);
+          a.download = f.name;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }, idx * 350);
+      });
+    };
+
+    unlockPinBtn.onclick = async () => {
+      pinErr.textContent = '';
+      const res = await fetch('/api/auth/pin?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: pinInput.value, sessionKey }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        pinErr.textContent = json.error || 'Invalid PIN';
+        return;
+      }
+      secState.pinVerified = true;
+      updateGateUi();
+      burstSparkles();
+    };
+
+    function connectWs() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(
+        proto + '//' + location.host + '/ws?role=mobile&token=' + encodeURIComponent(token) + '&session=' + encodeURIComponent(sessionKey),
+      );
+      ws.onopen = () => {
+        pillText.textContent = 'Connected';
+        pill.classList.remove('offline');
+      };
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'welcome' || msg.type === 'session_update') {
+          if (msg.clientId) clientId = msg.clientId;
+          if (msg.sessionKey) sessionKey = msg.sessionKey;
+          if (msg.signingKeyHex !== undefined) signingKeyHex = msg.signingKeyHex;
+          if (msg.security) {
+            secState = msg.security;
+            updateGateUi();
+          }
+          if (msg.files) renderOutbox(msg.files);
+        }
+      };
+      ws.onclose = () => {
+        pillText.textContent = 'Reconnecting...';
+        pill.classList.add('offline');
+        setTimeout(connectWs, 1500);
+      };
+    }
+
+    pickBtn.onclick = (e) => { e.stopPropagation(); fileInput.click(); };
+    sendBox.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => sendFiles(e.target.files);
+    sendBox.ondragover = (e) => { e.preventDefault(); sendBox.classList.add('active'); };
+    sendBox.ondragleave = () => sendBox.classList.remove('active');
+    sendBox.ondrop = (e) => {
+      e.preventDefault();
+      sendBox.classList.remove('active');
+      sendFiles(e.dataTransfer.files);
+    };
+
+    connectWs();
+  </script>
+</body>
+</html>

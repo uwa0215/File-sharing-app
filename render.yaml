@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: devicebridge-qr-web
+    runtime: node
+    plan: free
+    rootDir: web_app
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CLOUD_MODE
+        value: "1"

@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+dist
+docs
+scripts
+windows_host
+mobile_companion
+web_app/node_modules
+*.bat
+*.exe
+*.zip

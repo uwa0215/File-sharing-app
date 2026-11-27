@@ -22,6 +22,10 @@ windows_host/native_tools/ios/*.dll
 windows_host/native_tools/airplay/*.exe
 windows_host/native_tools/airplay/*.dll
 
+# Node / Web App
+node_modules/
+**/node_modules/
+
 # IDE / OS
 .idea/
 .vscode/
