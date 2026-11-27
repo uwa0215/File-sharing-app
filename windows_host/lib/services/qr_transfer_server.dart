@@ -209,6 +209,17 @@ class QrTransferServer {
     return res.exitCode == 0;
   }
 
+  /// Opens Windows Mobile Hotspot settings so users on restricted office Wi-Fi
+  /// can share directly with their phone without an external Wi-Fi router.
+  Future<void> openMobileHotspotSettings() async {
+    if (!Platform.isWindows) return;
+    await Process.start(
+      'cmd',
+      const ['/c', 'start', 'ms-settings:network-mobilehotspot'],
+      runInShell: false,
+    );
+  }
+
   Future<void> setReceiveDirectory(Directory dir) async {
     _receiveDir = dir;
     await _receiveDir.create(recursive: true);
@@ -326,17 +337,21 @@ class QrTransferServer {
       for (final addr in iface.addresses) {
         final ip = addr.address;
         if (ip.startsWith('127.') || ip.startsWith('169.254.')) continue;
+        final isHotspot = ip == '192.168.137.1';
         final isCommonLan = ip.startsWith('192.168.') || ip.startsWith('10.');
         results.add(
           LanInterfaceInfo(
-            interfaceName: iface.name,
+            interfaceName: isHotspot ? 'Windows Mobile Hotspot' : iface.name,
             ipAddress: ip,
-            isPreferred: !isVirtual && isCommonLan,
+            isPreferred: isHotspot || (!isVirtual && isCommonLan),
           ),
         );
       }
     }
     results.sort((a, b) {
+      final aHotspot = a.ipAddress == '192.168.137.1';
+      final bHotspot = b.ipAddress == '192.168.137.1';
+      if (aHotspot != bHotspot) return aHotspot ? -1 : 1;
       if (a.isPreferred != b.isPreferred) {
         return a.isPreferred ? -1 : 1;
       }

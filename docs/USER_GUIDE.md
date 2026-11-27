@@ -1,40 +1,30 @@
 # DeviceBridge User Guide
 
-Welcome to **DeviceBridge** — a native Windows file-sharing app designed to **send immediately without needing Wi-Fi** (via **Bluetooth** or **USB Cable**), plus an optional **QR Wi-Fi** browser portal.
+Welcome to **DeviceBridge** — a native Windows file-sharing application uniting **QR Code Transfer**, **Bluetooth Instant Send (No Wi-Fi)**, and **USB Cable Transfer** on one simple screen.
 
 ---
 
-## Method 1: Instant Send Without Wi-Fi (`No Wi-Fi Send` Tab — Default)
+## 1. Transfer Using the QR Code (`Easy Transfer` Screen — Default)
 
-Works completely offline with **no Wi-Fi router, no firewall setup, and no mobile app**:
-
-### Option A: Wireless Bluetooth Send (No Wi-Fi, No Cable — Android & Windows PC)
-1. Click **`Pair New Device`** (or open Windows **Settings -> Bluetooth & devices**) and pair your Android phone once.
-2. In DeviceBridge, click your phone's **`• Bluetooth`** chip in **Send Target (No Wi-Fi)** *(or click **Scan Nearby Bluetooth**)*.
-3. **Drag & drop** any files or folders onto the large **Drop Files** box (or click **Select Files & Send Now**).
-4. Windows sends the files **immediately** over Bluetooth — tap **Accept** on your phone.
-5. To receive files sent *from* your Android phone over Bluetooth, click **`Receive from Phone (Bluetooth)`** first.
-
-> **Apple iPhone Note:** Apple blocks Bluetooth OBEX file transfers on iOS. For iPhone without Wi-Fi, plug in your **USB cable**, tap **Trust**, and use **`USB Explorer`** to copy photos/videos (`DCIM`) to Windows.
-
-### Option B: Direct USB Cable Send (Fastest — Zero Wi-Fi)
-1. Plug your Android phone into your Windows PC with a USB cable (set USB mode to **File Transfer / MTP** or enable **USB Debugging**).
-2. Select your **`• USB`** chip at the top, drop files onto the center box, and they copy immediately at full USB speed.
+1. Open **DeviceBridge** on Windows — the **QR Code** appears immediately on the left.
+2. **If your office/school Wi-Fi blocks local scans (`Public` network):**
+   - Click **`Allow Windows Firewall Access`** if the amber firewall banner appears.
+   - Or click **`Hotspot`** (`192.168.137.1`), turn on **Windows Mobile Hotspot**, and connect your phone to your laptop's hotspot (works with **no external Wi-Fi router**).
+3. Point your **iPhone or Android Camera** at the QR code and tap the link banner.
+4. Windows detects the connection (`Device(s) Connected via QR`) and opens the **QR File Transfer Window**:
+   - **Windows -> Phone:** Drag & drop files or folders (or click **Add Files** / **Add Folder**). They appear live on your phone with **Download** and **Download All**.
+   - **Phone -> Windows:** Tap **Choose Files** on your phone's page to upload multiple photos/videos/files directly into your Windows **`Downloads\DeviceBridge`** folder.
 
 ---
 
-## Method 2: Browse & Drag Files From Phone to PC (`USB Explorer` Tab)
+## 2. Instant Send Without Wi-Fi (`USB` or `Bluetooth` Chips on the Same Screen)
 
-1. Switch to **`USB Explorer`** in the top bar after plugging in your Android or iPhone/iPad.
-2. Browse `DCIM`, `Download`, `Pictures`, or `Documents`.
-3. Drag any file row (or check multiple photos and drag one checked row!) straight onto your **Windows Desktop** or **File Explorer**, or click **`Export Selected to PC`**.
-4. For Android with USB Debugging enabled, click **Mirror** to view & control your phone screen inside DeviceBridge.
+Right at the top of the **Transfer Window**, you can also switch **Transfer Target** from **QR Code Session** to:
+- **A plugged-in USB Phone (`• USB`):** Drop files/folders to copy immediately at full USB speed.
+- **A paired Bluetooth Phone (`• Bluetooth`):** Click **Scan Bluetooth** or **Pair Device**, select your Android phone, and drop files to push them wirelessly with zero Wi-Fi (tap **Accept** on Android; click **Receive Bluetooth** to receive from Android).
 
 ---
 
-## Method 3: Scan QR Code (`QR Wi-Fi` Tab)
+## 3. Browse & Drag Files From Phone to PC (`USB Explorer & Mirror` Tab)
 
-When both devices are on a private Wi-Fi network or Mobile Hotspot:
-1. Switch to **`QR Wi-Fi`**.
-2. If you see an amber firewall banner, click **`Allow Windows Firewall Access`** and approve the Windows prompt.
-3. Point your phone Camera at the QR code and tap the link to upload/download files in bulk through the **QR File Transfer Window**.
+Switch to **`USB Explorer & Mirror`** in the top bar anytime you want to browse `DCIM`, `Download`, `Pictures`, or `Documents` on a USB-connected Android or iPhone/iPad, drag files straight onto your Windows Desktop, or click **Mirror** for live Android screen control (`scrcpy`).
