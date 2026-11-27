@@ -684,13 +684,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       : Icons.usb,
                   color: const Color(0xFF38BDF8),
                 ),
-                const SizedBox(width: 10),
-                const Text('DeviceBridge'),
-                const SizedBox(width: 16),
+                const SizedBox(width: 8),
+                const Flexible(
+                  flex: 0,
+                  child: Text(
+                    'DeviceBridge',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     _mode == AppWorkspaceMode.easyTransfer
-                        ? 'Scan QR code or send directly via USB / Bluetooth'
+                        ? 'Scan QR code or send via USB / Bluetooth'
                         : _statusBanner,
                     style:
                         const TextStyle(fontSize: 12.5, color: Colors.white70),
@@ -706,12 +712,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ButtonSegment(
                     value: AppWorkspaceMode.easyTransfer,
                     icon: Icon(Icons.qr_code_2, size: 18),
-                    label: Text('Easy Transfer (QR + Direct)'),
+                    label: Text('Easy Transfer'),
                   ),
                   ButtonSegment(
                     value: AppWorkspaceMode.usbExplorer,
                     icon: Icon(Icons.usb, size: 18),
-                    label: Text('USB Explorer & Mirror'),
+                    label: Text('USB Explorer'),
                   ),
                 ],
                 selected: {_mode},

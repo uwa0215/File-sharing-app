@@ -30,8 +30,8 @@ void main() {
     await tester.tap(find.byTooltip('Close Transfer Window'));
     await tester.pumpAndSettle();
 
-    // 3. Switch to USB Explorer & Mirror
-    await tester.tap(find.text('USB Explorer & Mirror'));
+    // 3. Switch to USB Explorer
+    await tester.tap(find.text('USB Explorer'));
     await tester.pumpAndSettle();
     expect(find.text('Mirror & Send to Phone'), findsOneWidget);
   });
