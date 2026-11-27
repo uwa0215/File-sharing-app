@@ -13,8 +13,12 @@ import 'models/usb_device_models.dart';
 import 'services/adb_usb_service.dart';
 import 'services/mirror_process_manager.dart';
 import 'services/native_tools_locator.dart';
+import 'services/qr_transfer_server.dart';
 import 'services/usb_device_manager.dart';
 import 'services/wpd_usb_service.dart';
+import 'widgets/qr_transfer_panel.dart';
+
+enum AppWorkspaceMode { qrWireless, usbCable }
 
 void main() {
   runApp(const DeviceBridgeWindowsApp());
@@ -63,6 +67,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late final AdbUsbService _adbService;
   late final UsbDeviceManager _usbManager;
   late final MirrorProcessManager _mirrorManager;
+  late final QrTransferServer _qrServer;
 
   final GlobalKey _viewportKey = GlobalKey();
   final TextEditingController _searchController = TextEditingController();
@@ -71,7 +76,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<List<UsbTransferItem>>? _transfersSub;
   StreamSubscription<BatchTransferProgress>? _batchProgressSub;
   StreamSubscription<MirrorStatus>? _mirrorSub;
+  StreamSubscription<QrConnectedClient>? _qrScanSub;
 
+  AppWorkspaceMode _mode = AppWorkspaceMode.qrWireless;
   List<UsbPhoneDevice> _devices = const [];
   UsbPhoneDevice? _selectedDevice;
   List<UsbPathSegment> _breadcrumbs = const [];
@@ -99,6 +106,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       adbService: _adbService,
     );
     _mirrorManager = MirrorProcessManager(locator: _toolsLocator);
+    _qrServer = QrTransferServer(
+      receiveDir: Directory(p.join(Directory.systemTemp.path, 'DeviceBridge')),
+    );
 
     _devicesSub = _usbManager.devicesStream.listen(_onDevicesUpdated);
     _transfersSub = _usbManager.transfersStream.listen((items) {
@@ -116,6 +126,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() => _mirrorStatus = status);
       }
     });
+    _qrScanSub = _qrServer.deviceScannedStream.listen((client) {
+      if (mounted) {
+        setState(() {
+          _statusBanner =
+              'QR scanned & connected: ${client.deviceLabel} (${client.remoteAddress})';
+        });
+      }
+    });
 
     if (widget.enableNativeServices) {
       _usbManager.startMonitoring();
@@ -129,8 +147,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _transfersSub?.cancel();
     _batchProgressSub?.cancel();
     _mirrorSub?.cancel();
+    _qrScanSub?.cancel();
     _mirrorManager.dispose();
     _usbManager.dispose();
+    _qrServer.dispose();
     super.dispose();
   }
 
@@ -655,13 +675,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
             titleSpacing: 16,
             title: Row(
               children: [
-                const Icon(Icons.usb, color: Color(0xFF38BDF8)),
+                Icon(
+                  _mode == AppWorkspaceMode.qrWireless
+                      ? Icons.qr_code_2
+                      : Icons.usb,
+                  color: const Color(0xFF38BDF8),
+                ),
                 const SizedBox(width: 10),
-                const Text('DeviceBridge USB'),
+                const Text('DeviceBridge'),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Text(
-                    _statusBanner,
+                    _mode == AppWorkspaceMode.qrWireless
+                        ? 'Scan QR code with another device to transfer files wirelessly'
+                        : _statusBanner,
                     style:
                         const TextStyle(fontSize: 12.5, color: Colors.white70),
                     overflow: TextOverflow.ellipsis,
@@ -670,11 +697,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
             actions: [
-              IconButton(
-                onPressed: () => _usbManager.scanDevices(force: true),
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Rescan USB Devices',
+              SegmentedButton<AppWorkspaceMode>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: AppWorkspaceMode.qrWireless,
+                    icon: Icon(Icons.qr_code_2, size: 18),
+                    label: Text('QR Transfer'),
+                  ),
+                  ButtonSegment(
+                    value: AppWorkspaceMode.usbCable,
+                    icon: Icon(Icons.usb, size: 18),
+                    label: Text('USB Cable'),
+                  ),
+                ],
+                selected: {_mode},
+                onSelectionChanged: (next) {
+                  final target = next.first;
+                  if (target == AppWorkspaceMode.qrWireless &&
+                      _mirrorManager.isRunning) {
+                    unawaited(_mirrorManager.stopMirror());
+                  }
+                  setState(() => _mode = target);
+                },
               ),
+              const SizedBox(width: 8),
+              if (_mode == AppWorkspaceMode.usbCable)
+                IconButton(
+                  onPressed: () => _usbManager.scanDevices(force: true),
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Rescan USB Devices',
+                ),
               IconButton(
                 onPressed: _showToolsDiagnosticsDialog,
                 icon: const Icon(Icons.build_outlined),
@@ -683,32 +736,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 8),
             ],
           ),
-          body: Column(
-            children: [
-              _buildConnectedDevicesStrip(),
-              Expanded(
-                child: Row(
+          body: _mode == AppWorkspaceMode.qrWireless
+              ? QrTransferPanel(
+                  server: _qrServer,
+                  enableNativeServices: widget.enableNativeServices,
+                )
+              : Column(
                   children: [
-                    SizedBox(
-                      width: 370,
-                      child: _buildMirrorAndDropPanel(mirrorRunning),
-                    ),
-                    const VerticalDivider(width: 1),
+                    _buildConnectedDevicesStrip(),
                     Expanded(
-                      child: Column(
+                      child: Row(
                         children: [
-                          Expanded(child: _buildPhoneExplorerPanel()),
-                          if (_batchProgress.active) _buildBulkProgressBanner(),
-                          if (_transfers.isNotEmpty)
-                            _buildTransferActivityDrawer(),
+                          SizedBox(
+                            width: 370,
+                            child: _buildMirrorAndDropPanel(mirrorRunning),
+                          ),
+                          const VerticalDivider(width: 1),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                Expanded(child: _buildPhoneExplorerPanel()),
+                                if (_batchProgress.active)
+                                  _buildBulkProgressBanner(),
+                                if (_transfers.isNotEmpty)
+                                  _buildTransferActivityDrawer(),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
