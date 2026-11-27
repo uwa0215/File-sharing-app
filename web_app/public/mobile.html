@@ -3,8 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f0d23" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Send Signed Files — DeviceBridge</title>
+  <link id="manifestLink" rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M16 44C10 44 6 39 6 33C6 27.8 9.8 23.5 14.7 22.4C16.7 14.8 23.6 9 32 9C41.8 9 49.8 16.6 50.4 26.2C55.2 27.1 58.8 31.3 58.8 36.4C58.8 42.1 54.2 46.8 48.4 46.8H16V44Z' fill='%23ff85c0'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -477,7 +481,10 @@
         </svg>
         <span>DeviceBridge</span>
       </div>
-      <div id="pill" class="pill offline"><span class="pulse-dot"></span><span id="pillText">Connecting...</span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button id="installPwaBtn" class="btn secondary" type="button" style="display:none;min-height:32px;padding:5px 12px;font-size:12px;">Install App</button>
+        <div id="pill" class="pill offline"><span class="pulse-dot"></span><span id="pillText">Connecting...</span></div>
+      </div>
     </div>
 
     <!-- PIN Lock Card (hidden unless enabled via API) -->
@@ -1058,11 +1065,105 @@
 
     savePhotosAllBtn.onclick = () => saveMediaViaShare(sharedFiles, savePhotosAllBtn);
 
+    dlAllBtn.textContent = 'Download .zip';
     dlAllBtn.onclick = () => {
-      sharedFiles.forEach((f, idx) => {
-        setTimeout(() => triggerDownload(f), idx * 350);
-      });
+      const a = document.createElement('a');
+      a.href = '/api/download-zip?token=' + encodeURIComponent(token) +
+        '&session=' + encodeURIComponent(sessionKey) +
+        '&cid=' + encodeURIComponent(clientId);
+      a.download = 'DeviceBridge_Files.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast('Downloading ZIP archive');
     };
+
+    // PWA Install, Service Worker registration, and Android Share Target queue
+    const manifestLink = document.getElementById('manifestLink');
+    const installPwaBtn = document.getElementById('installPwaBtn');
+    if (manifestLink && token) {
+      manifestLink.href = '/manifest.json?token=' + encodeURIComponent(token);
+      try { localStorage.setItem('db_last_token', token); } catch {}
+    }
+
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      if (installPwaBtn) installPwaBtn.style.display = 'inline-flex';
+    });
+    installPwaBtn?.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      installPwaBtn.style.display = 'none';
+    });
+
+    function openPwaDb() {
+      return new Promise((resolve, reject) => {
+        if (!window.indexedDB) { resolve(null); return; }
+        const req = indexedDB.open('devicebridge-pwa', 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+          if (!db.objectStoreNames.contains('shared-files')) db.createObjectStore('shared-files', { autoIncrement: true });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function persistTokenForShareTarget() {
+      try {
+        const db = await openPwaDb();
+        if (db && token) {
+          await new Promise((resolve) => {
+            const tx = db.transaction('kv', 'readwrite');
+            tx.objectStore('kv').put(token, 'lastToken');
+            tx.oncomplete = resolve;
+            tx.onerror = resolve;
+          });
+        }
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          const sw = reg.active || reg.waiting || reg.installing;
+          sw?.postMessage({ type: 'SET_TOKEN', token });
+        }
+      } catch {}
+    }
+
+    let consumedSharedQueue = false;
+    async function flushSharedQueueIfReady() {
+      if (consumedSharedQueue) return;
+      if (secState.blocked) return;
+      if (secState.requirePin && !secState.pinVerified) return;
+      if (secState.requireApproval && !secState.approved) return;
+      if (secState.requireSignature && !signingKeyHex) return;
+      if (params.get('shared') !== '1') return;
+
+      try {
+        const db = await openPwaDb();
+        if (!db) return;
+        const queued = await new Promise((resolve) => {
+          const tx = db.transaction('shared-files', 'readwrite');
+          const store = tx.objectStore('shared-files');
+          const getReq = store.getAll();
+          getReq.onsuccess = () => {
+            const files = getReq.result || [];
+            if (files.length) store.clear();
+            resolve(files);
+          };
+          getReq.onerror = () => resolve([]);
+        });
+        consumedSharedQueue = true;
+        if (queued.length > 0) {
+          history.replaceState(null, '', location.pathname);
+          showToast('Uploading ' + queued.length + ' shared file(s)...');
+          await sendFiles(queued);
+        }
+      } catch {}
+    }
 
     unlockPinBtn.onclick = async () => {
       pinErr.textContent = '';
@@ -1110,6 +1211,7 @@
               updateGateUi();
             }
             if (msg.files) renderOutbox(msg.files);
+            void flushSharedQueueIfReady();
           }
         } catch {}
       };
@@ -1133,6 +1235,7 @@
       sendFiles(e.dataTransfer.files);
     };
 
+    void persistTokenForShareTarget();
     connectWs();
   </script>
 </body>

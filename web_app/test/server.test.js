@@ -226,6 +226,40 @@ describe('DeviceBridge QR Web App', () => {
     assert.equal(dlRes.headers.get('x-file-signature'), shareJson.signature);
     assert.equal(await dlRes.text(), 'Hello Phone!');
 
+    // ZIP endpoints bundle both received and outbox files into valid STORE ZIP archives
+    const deskZipRes = await fetch(`http://127.0.0.1:${port}/api/desktop/received-zip`);
+    assert.equal(deskZipRes.status, 200);
+    assert.equal(deskZipRes.headers.get('content-type'), 'application/zip');
+    const deskZipBuf = Buffer.from(await deskZipRes.arrayBuffer());
+    assert.equal(deskZipBuf.readUInt32LE(0), 0x04034b50); // Local header magic
+    assert.ok(deskZipBuf.includes(Buffer.from('IMG_001.jpg')));
+    assert.ok(deskZipBuf.includes(Buffer.from('clip.mp4')));
+
+    const mobZipRes = await fetch(`http://127.0.0.1:${port}/api/download-zip?token=${token}`);
+    assert.equal(mobZipRes.status, 200);
+    assert.equal(mobZipRes.headers.get('content-type'), 'application/zip');
+    const mobZipBuf = Buffer.from(await mobZipRes.arrayBuffer());
+    assert.equal(mobZipBuf.readUInt32LE(0), 0x04034b50);
+    assert.ok(mobZipBuf.includes(Buffer.from('report.txt')));
+
+    // PWA manifest, Service Worker, and generated PNG icons
+    const manifestRes = await fetch(`http://127.0.0.1:${port}/manifest.json?token=${token}`);
+    assert.equal(manifestRes.status, 200);
+    const manifest = await manifestRes.json();
+    assert.equal(manifest.start_url, `/s/${token}`);
+    assert.equal(manifest.share_target.action, '/share-target');
+    assert.equal(manifest.icons[0].type, 'image/png');
+
+    const swRes = await fetch(`http://127.0.0.1:${port}/sw.js`);
+    assert.equal(swRes.status, 200);
+    assert.equal(swRes.headers.get('service-worker-allowed'), '/');
+
+    const iconRes = await fetch(`http://127.0.0.1:${port}/icon-192.png`);
+    assert.equal(iconRes.status, 200);
+    assert.equal(iconRes.headers.get('content-type'), 'image/png');
+    const iconBuf = Buffer.from(await iconRes.arrayBuffer());
+    assert.deepEqual(iconBuf.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+
     // Media shared file returns accurate image MIME & supports inline preview
     const photoShare = await (
       await fetch(`http://127.0.0.1:${port}/api/desktop/share-file?name=album.jpg`, {

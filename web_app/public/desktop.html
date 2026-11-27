@@ -1044,7 +1044,10 @@
                 <p class="muted">SHA-256 + HMAC verified before saving</p>
               </div>
             </div>
-            <button id="clearFinishedBtn" class="btn secondary" type="button">Clear Finished</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <a id="dlZipDesktopBtn" class="btn secondary" style="display:none;" download="DeviceBridge_Received.zip">Download All (.zip)</a>
+              <button id="clearFinishedBtn" class="btn secondary" type="button">Clear Finished</button>
+            </div>
           </div>
 
           <div id="incomingList" class="transfer-list"></div>
@@ -1118,6 +1121,7 @@
     const saveDirText = document.getElementById('saveDirText');
     const openFolderBtn = document.getElementById('openFolderBtn');
     const autoSaveBtn = document.getElementById('autoSaveBtn');
+    const dlZipDesktopBtn = document.getElementById('dlZipDesktopBtn');
     const qrActions = document.querySelector('.qr-actions');
     const receivedCount = document.getElementById('receivedCount');
     const outboxCount = document.getElementById('outboxCount');
@@ -1243,6 +1247,15 @@
 
     function renderTransfers(transfers) {
       receivedCount.textContent = (transfers || []).length;
+      const completedIncoming = (transfers || []).filter(
+        (r) => r.state === 'completed' && r.direction === 'from_phone',
+      );
+      if (completedIncoming.length > 0) {
+        dlZipDesktopBtn.style.display = 'inline-flex';
+        dlZipDesktopBtn.href = withRoomParams('/api/desktop/received-zip');
+      } else {
+        dlZipDesktopBtn.style.display = 'none';
+      }
       if (!transfers || !transfers.length) {
         incomingList.innerHTML = emptyIncomingHtml();
         return;

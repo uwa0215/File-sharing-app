@@ -7,7 +7,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
+import { getPwaIconPng } from './lib/pwa_icons.js';
 import { upgradeWebSocket } from './lib/websocket.js';
+import { streamZipFiles } from './lib/zip.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -625,6 +627,19 @@ function createTransferRoom({
       return;
     }
 
+    if (pathname === '/api/desktop/received-zip' && req.method === 'GET') {
+      const entries = transferRecords
+        .filter((r) => r.state === 'completed' && r.direction === 'from_phone' && r.savedPath && fs.existsSync(r.savedPath))
+        .map((r) => ({ name: r.fileName, filePath: r.savedPath }));
+      if (!entries.length) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'No received files available to zip.' }));
+        return;
+      }
+      await streamZipFiles(res, entries, 'DeviceBridge_Received.zip');
+      return;
+    }
+
     if (pathname.startsWith('/api/desktop/received/') && req.method === 'GET') {
       const recId = decodeURIComponentSafe(pathname.slice('/api/desktop/received/'.length));
       const rec = transferRecords.find((r) => r.id === recId && r.savedPath);
@@ -726,6 +741,19 @@ function createTransferRoom({
     if (pathname === '/api/files' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ files: serializeOutboxForMobile() }));
+      return;
+    }
+
+    if (pathname === '/api/download-zip' && req.method === 'GET') {
+      const entries = Array.from(outboxFiles.values())
+        .filter((f) => f.filePath && fs.existsSync(f.filePath))
+        .map((f) => ({ name: f.name, filePath: f.filePath }));
+      if (!entries.length) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'No files available to download.' }));
+        return;
+      }
+      await streamZipFiles(res, entries, 'DeviceBridge_Files.zip');
       return;
     }
 
@@ -1379,6 +1407,81 @@ export function createQrWebApp({
       if (pathname === '/favicon.ico' && req.method === 'GET') {
         res.writeHead(204, { 'Cache-Control': 'public, max-age=86400' });
         res.end();
+        return;
+      }
+
+      if (pathname === '/icon-192.png' && req.method === 'GET') {
+        const png = getPwaIconPng(192);
+        res.writeHead(200, {
+          'Content-Type': 'image/png',
+          'Content-Length': png.length,
+          'Cache-Control': 'public, max-age=604800',
+        });
+        res.end(png);
+        return;
+      }
+
+      if (pathname === '/icon-512.png' && req.method === 'GET') {
+        const png = getPwaIconPng(512);
+        res.writeHead(200, {
+          'Content-Type': 'image/png',
+          'Content-Length': png.length,
+          'Cache-Control': 'public, max-age=604800',
+        });
+        res.end(png);
+        return;
+      }
+
+      if (pathname === '/sw.js' && req.method === 'GET') {
+        const js = await fsp.readFile(path.join(PUBLIC_DIR, 'sw.js'));
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Service-Worker-Allowed': '/',
+          'Cache-Control': 'no-store',
+        });
+        res.end(js);
+        return;
+      }
+
+      if (pathname === '/manifest.json' && req.method === 'GET') {
+        const startToken = (urlObj.searchParams.get('token') || '').trim();
+        const manifest = {
+          name: 'DeviceBridge QR',
+          short_name: 'DeviceBridge',
+          description: 'Send signed files wirelessly between phone and computer via QR.',
+          start_url: startToken ? `/s/${encodeURIComponent(startToken)}` : '/',
+          scope: '/',
+          display: 'standalone',
+          background_color: '#0f0d23',
+          theme_color: '#141229',
+          icons: [
+            { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+            { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          ],
+          share_target: {
+            action: '/share-target',
+            method: 'POST',
+            enctype: 'multipart/form-data',
+            params: {
+              title: 'title',
+              text: 'text',
+              url: 'url',
+              files: [{ name: 'files', accept: ['*/*'] }],
+            },
+          },
+        };
+        res.writeHead(200, {
+          'Content-Type': 'application/manifest+json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        res.end(JSON.stringify(manifest));
+        return;
+      }
+
+      if (pathname === '/share-target') {
+        const fallbackHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>DeviceBridge Share</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f0d23;color:#fff9fd;font-family:system-ui,sans-serif;padding:24px;text-align:center}.box{max-width:420px;background:rgba(24,21,51,.9);border:1px solid rgba(255,255,255,.15);border-radius:22px;padding:22px}input{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:#121028;color:#fff;margin:12px 0}button{border:0;border-radius:12px;padding:12px 20px;background:linear-gradient(135deg,#ff85c0,#a78bfa);color:#180d2d;font-weight:800;cursor:pointer;width:100%}</style></head><body><div class="box"><h2>Pair With Your Computer First</h2><p style="color:#b6b1d6;font-size:14px;">Your shared files are queued safely! Paste the QR link from the desktop screen below (or re-scan the QR code) to upload them immediately.</p><input id="qrInput" placeholder="https://.../s/TOKEN"/><button onclick="go()">Continue Upload</button></div><script>const last=localStorage.getItem('db_last_token');if(last){location.replace('/s/'+encodeURIComponent(last)+'?shared=1');}function go(){const v=document.getElementById('qrInput').value.trim();const m=v.match(/\\/s\\/([^/?#]+)/);const tok=m?m[1]:v;if(tok){localStorage.setItem('db_last_token',tok);location.href='/s/'+encodeURIComponent(tok)+'?shared=1';}}</script></body></html>`;
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(fallbackHtml);
         return;
       }
 
