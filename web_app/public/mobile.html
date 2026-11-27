@@ -284,6 +284,28 @@
     }
     .btn:active { transform: scale(0.95); }
     .btn.secondary { background: rgba(255, 255, 255, 0.09); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .btn.teal { background: rgba(110, 231, 183, 0.2); color: var(--mint); border: 1px solid rgba(110, 231, 183, 0.42); }
+
+    .perm-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 11px 13px;
+      border-radius: 16px;
+      background: rgba(125, 211, 252, 0.08);
+      border: 1px solid rgba(125, 211, 252, 0.25);
+      margin-bottom: 10px;
+    }
+    .thumb-img {
+      width: 44px;
+      height: 44px;
+      border-radius: 11px;
+      object-fit: cover;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+    }
 
     input.pin-input {
       width: 100%;
@@ -500,8 +522,20 @@
             </div>
             <h2>Files From Computer</h2>
           </div>
-          <button id="dlAllBtn" class="btn secondary" type="button" style="display:none;">Download All</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="savePhotosAllBtn" class="btn" type="button" style="display:none;">Save to Photos</button>
+            <button id="dlAllBtn" class="btn secondary" type="button" style="display:none;">Download All</button>
+          </div>
         </div>
+
+        <div class="perm-bar">
+          <div class="meta">
+            <div style="font-size:13px;font-weight:700;">Auto-Save Incoming Files</div>
+            <div id="permHint" class="sub">Grant permission so new transfers download automatically to your device</div>
+          </div>
+          <button id="autoSaveToggleBtn" class="btn secondary" type="button">Allow Auto-Save</button>
+        </div>
+
         <div id="outboxList" class="list">
           <p class="muted" style="margin:0;">No files shared from the computer right now.</p>
         </div>
@@ -535,12 +569,24 @@
     const sentList = document.getElementById('sentList');
     const outboxList = document.getElementById('outboxList');
     const dlAllBtn = document.getElementById('dlAllBtn');
+    const savePhotosAllBtn = document.getElementById('savePhotosAllBtn');
+    const autoSaveToggleBtn = document.getElementById('autoSaveToggleBtn');
+    const permHint = document.getElementById('permHint');
 
     let clientId = '';
     let sessionKey = Math.random().toString(36).slice(2) + Date.now().toString(36);
     let signingKeyHex = '';
     let secState = { requireSignature: true, requirePin: false, requireApproval: false, pinVerified: true, approved: true, blocked: false };
     let sharedFiles = [];
+    let autoSaveAllowed = false;
+    const autoSavedIds = new Set();
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+
+    if (isIos) {
+      permHint.textContent = 'iOS Safari: Auto-Save downloads to Files; tap Save to Photos -> Save Image for Gallery';
+    } else {
+      permHint.textContent = 'Allow automatic download of new files to Downloads / Gallery';
+    }
 
     function burstSparkles() {
       const colors = ['#ff85c0', '#7dd3fc', '#6ee7b7', '#fde68a', '#a78bfa'];
@@ -756,51 +802,155 @@
       fileInput.value = '';
     }
 
-    function downloadHref(fileId) {
+    function downloadHref(fileId, inline = false) {
       return '/api/download/' + encodeURIComponent(fileId) +
         '?token=' + encodeURIComponent(token) +
         '&session=' + encodeURIComponent(sessionKey) +
-        '&cid=' + encodeURIComponent(clientId);
+        '&cid=' + encodeURIComponent(clientId) +
+        (inline ? '&inline=1' : '');
+    }
+
+    function isMediaName(name) {
+      return /\.(jpe?g|png|gif|webp|heic|heif|mp4|mov|webm|m4v)$/i.test(name || '');
+    }
+
+    function isImageName(name) {
+      return /\.(jpe?g|png|gif|webp|bmp)$/i.test(name || '');
+    }
+
+    function triggerDownload(file) {
+      const a = document.createElement('a');
+      a.href = downloadHref(file.id);
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    async function saveMediaViaShare(filesToSave, btnEl) {
+      const targets = (filesToSave || []).filter((f) => isMediaName(f.name));
+      if (!targets.length || !navigator.share) return false;
+      const origLabel = btnEl ? btnEl.textContent : '';
+      try {
+        if (btnEl) {
+          btnEl.disabled = true;
+          btnEl.textContent = 'Preparing...';
+        }
+        const fileObjs = [];
+        for (const f of targets) {
+          const res = await fetch(downloadHref(f.id, true));
+          if (!res.ok) throw new Error('Download failed');
+          const blob = await res.blob();
+          fileObjs.push(new File([blob], f.name, { type: blob.type || 'image/jpeg' }));
+        }
+        if (navigator.canShare && navigator.canShare({ files: fileObjs })) {
+          await navigator.share({ files: fileObjs, title: 'Save to Gallery' });
+          burstSparkles();
+          return true;
+        }
+      } catch (err) {
+        if (err && err.name !== 'AbortError') {
+          targets.forEach((f, idx) => setTimeout(() => triggerDownload(f), idx * 350));
+        }
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = origLabel;
+        }
+      }
+      return false;
     }
 
     function renderOutbox(files) {
       sharedFiles = files || [];
       if (!sharedFiles.length) {
         dlAllBtn.style.display = 'none';
+        savePhotosAllBtn.style.display = 'none';
         outboxList.innerHTML = '<p class="muted" style="margin:0;">No files shared from the computer right now.</p>';
         return;
       }
+
+      if (autoSaveAllowed) {
+        const fresh = sharedFiles.filter((f) => !autoSavedIds.has(f.id));
+        fresh.forEach((f, idx) => {
+          autoSavedIds.add(f.id);
+          setTimeout(() => triggerDownload(f), idx * 450);
+        });
+      }
+
+      const mediaFiles = sharedFiles.filter((f) => isMediaName(f.name));
+      const canShareFiles = typeof navigator.share === 'function' && typeof navigator.canShare === 'function';
       dlAllBtn.style.display = sharedFiles.length > 1 ? 'inline-flex' : 'none';
+      savePhotosAllBtn.style.display = (canShareFiles && mediaFiles.length > 0) ? 'inline-flex' : 'none';
       outboxList.innerHTML = '';
+
       for (const f of sharedFiles) {
         const row = document.createElement('div');
         row.className = 'row';
+
+        if (isImageName(f.name)) {
+          const img = document.createElement('img');
+          img.className = 'thumb-img';
+          img.src = downloadHref(f.id, true);
+          img.alt = f.name;
+          row.appendChild(img);
+        }
+
         const meta = document.createElement('div');
         meta.className = 'meta';
         meta.innerHTML = '<div class="name"></div><div class="sub"></div>';
         meta.querySelector('.name').textContent = f.name;
         meta.querySelector('.sub').textContent = fmtBytes(f.sizeBytes || 0) + (f.sha256 ? ' • Signed SHA-256' : '');
+        row.appendChild(meta);
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '6px';
+        actions.style.flexWrap = 'wrap';
+
+        if (canShareFiles && isMediaName(f.name)) {
+          const galleryBtn = document.createElement('button');
+          galleryBtn.className = 'btn';
+          galleryBtn.type = 'button';
+          galleryBtn.textContent = 'Save to Photos';
+          galleryBtn.onclick = () => saveMediaViaShare([f], galleryBtn);
+          actions.appendChild(galleryBtn);
+        }
+
         const dl = document.createElement('a');
-        dl.className = 'btn';
+        dl.className = (canShareFiles && isMediaName(f.name)) ? 'btn secondary' : 'btn';
         dl.textContent = 'Download';
         dl.href = downloadHref(f.id);
         dl.download = f.name;
-        row.appendChild(meta);
-        row.appendChild(dl);
+        actions.appendChild(dl);
+
+        row.appendChild(actions);
         outboxList.appendChild(row);
       }
     }
 
+    autoSaveToggleBtn.onclick = () => {
+      autoSaveAllowed = !autoSaveAllowed;
+      if (autoSaveAllowed) {
+        autoSaveToggleBtn.textContent = 'Auto-Save Allowed';
+        autoSaveToggleBtn.className = 'btn teal';
+        sharedFiles.forEach((f, idx) => {
+          if (!autoSavedIds.has(f.id)) {
+            autoSavedIds.add(f.id);
+            setTimeout(() => triggerDownload(f), idx * 450);
+          }
+        });
+      } else {
+        autoSaveToggleBtn.textContent = 'Allow Auto-Save';
+        autoSaveToggleBtn.className = 'btn secondary';
+      }
+    };
+
+    savePhotosAllBtn.onclick = () => saveMediaViaShare(sharedFiles, savePhotosAllBtn);
+
     dlAllBtn.onclick = () => {
       sharedFiles.forEach((f, idx) => {
-        setTimeout(() => {
-          const a = document.createElement('a');
-          a.href = downloadHref(f.id);
-          a.download = f.name;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        }, idx * 350);
+        setTimeout(() => triggerDownload(f), idx * 350);
       });
     };
 

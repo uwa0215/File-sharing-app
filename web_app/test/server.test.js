@@ -226,6 +226,20 @@ describe('DeviceBridge QR Web App', () => {
     assert.equal(dlRes.headers.get('x-file-signature'), shareJson.signature);
     assert.equal(await dlRes.text(), 'Hello Phone!');
 
+    // Media shared file returns accurate image MIME & supports inline preview
+    const photoShare = await (
+      await fetch(`http://127.0.0.1:${port}/api/desktop/share-file?name=album.jpg`, {
+        method: 'POST',
+        body: Buffer.from('JPGDATA'),
+      })
+    ).json();
+    const inlinePhotoRes = await fetch(
+      `http://127.0.0.1:${port}/api/download/${photoShare.id}?token=${token}&inline=1`,
+    );
+    assert.equal(inlinePhotoRes.status, 200);
+    assert.equal(inlinePhotoRes.headers.get('content-type'), 'image/jpeg');
+    assert.equal(inlinePhotoRes.headers.get('content-disposition'), null);
+
     // 5. WebSocket scan registers device
     await new Promise((resolve, reject) => {
       const req = http.request({

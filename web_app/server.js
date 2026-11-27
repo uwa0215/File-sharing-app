@@ -16,6 +16,29 @@ const DEFAULT_ROOM_TTL_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_MAX_ROOMS = 250;
 const DEFAULT_MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
+const MIME_BY_EXT = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+  '.bmp': 'image/bmp',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.m4v': 'video/x-m4v',
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav',
+  '.pdf': 'application/pdf',
+};
+
+function mimeTypeForFilename(fileName = '') {
+  return MIME_BY_EXT[path.extname(fileName).toLowerCase()] || 'application/octet-stream';
+}
+
 export function sanitizeFilename(rawName) {
   const decoded = (() => {
     try {
@@ -586,15 +609,7 @@ function createTransferRoom({
       }
       const stat = await fsp.stat(rec.savedPath);
       const isInline = urlObj.searchParams.get('inline') === '1';
-      const ext = path.extname(rec.fileName).toLowerCase();
-      const mime =
-        {
-          '.jpg': 'image/jpeg',
-          '.jpeg': 'image/jpeg',
-          '.png': 'image/png',
-          '.gif': 'image/gif',
-          '.webp': 'image/webp',
-        }[ext] || 'application/octet-stream';
+      const mime = mimeTypeForFilename(rec.fileName);
       const encoded = encodeURIComponent(rec.fileName);
       const asciiFallback = rec.fileName.replace(/[^\x20-\x7E]|"/g, '_');
       res.writeHead(200, {
@@ -709,14 +724,20 @@ function createTransferRoom({
         sha256: shared.sha256,
       });
 
+      const isInline = urlObj.searchParams.get('inline') === '1';
+      const mime = mimeTypeForFilename(shared.name);
       const encoded = encodeURIComponent(shared.name);
       const asciiFallback = shared.name.replace(/[^\x20-\x7E]|"/g, '_');
       res.writeHead(200, {
-        'Content-Type': 'application/octet-stream',
+        'Content-Type': mime,
         'Content-Length': stat.size,
         'X-File-SHA256': shared.sha256,
         'X-File-Signature': shared.signature,
-        'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
+        ...(isInline
+          ? { 'Cache-Control': 'no-store' }
+          : {
+              'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
+            }),
       });
 
       let sent = 0;
