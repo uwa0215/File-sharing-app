@@ -371,5 +371,18 @@ describe('DeviceBridge Public Cloud Multi-Room Mode', () => {
     );
     assert.equal(dlAllowed.status, 200);
     assert.deepEqual(Buffer.from(await dlAllowed.arrayBuffer()), payload);
+
+    // Favicon returns 204 and malformed URI / invalid JSON return clean 400/403 without crashing
+    const favRes = await fetch(`http://127.0.0.1:${port}/favicon.ico`);
+    assert.equal(favRes.status, 204);
+
+    const badJsonRes = await fetch(
+      `http://127.0.0.1:${port}/api/desktop/security?room=${encodeURIComponent(alice.roomId)}&hostKey=${encodeURIComponent(alice.hostKey)}`,
+      { method: 'POST', body: '{not-valid-json' },
+    );
+    assert.equal(badJsonRes.status, 400);
+
+    const malformedTokenRes = await fetch(`http://127.0.0.1:${port}/s/%ZZ`);
+    assert.equal(malformedTokenRes.status, 403);
   });
 });

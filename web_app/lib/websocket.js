@@ -32,6 +32,15 @@ export function upgradeWebSocket(req, socket) {
   const messageHandlers = [];
   const closeHandlers = [];
 
+  function safeWrite(buf) {
+    if (closed || socket.destroyed) return;
+    try {
+      socket.write(buf);
+    } catch {
+      close();
+    }
+  }
+
   function sendText(text) {
     if (closed || socket.destroyed) return;
     const payload = Buffer.from(text, 'utf8');
@@ -52,7 +61,7 @@ export function upgradeWebSocket(req, socket) {
       header[1] = 127;
       header.writeBigUInt64BE(BigInt(len), 2);
     }
-    socket.write(Buffer.concat([header, payload]));
+    safeWrite(Buffer.concat([header, payload]));
   }
 
   function sendPong(data) {
@@ -61,12 +70,19 @@ export function upgradeWebSocket(req, socket) {
     const header = Buffer.allocUnsafe(2);
     header[0] = 0x8a;
     header[1] = len;
-    socket.write(Buffer.concat([header, data]));
+    safeWrite(Buffer.concat([header, data]));
   }
+
+  const heartbeatTimer = setInterval(() => {
+    if (closed || socket.destroyed) return;
+    safeWrite(Buffer.from([0x89, 0x00]));
+  }, 25000);
+  heartbeatTimer.unref();
 
   function close() {
     if (closed) return;
     closed = true;
+    clearInterval(heartbeatTimer);
     try {
       socket.end(Buffer.from([0x88, 0x00]));
     } catch {
@@ -133,6 +149,7 @@ export function upgradeWebSocket(req, socket) {
   socket.on('close', () => {
     if (!closed) {
       closed = true;
+      clearInterval(heartbeatTimer);
       for (const fn of closeHandlers) fn();
     }
   });
@@ -140,6 +157,7 @@ export function upgradeWebSocket(req, socket) {
   socket.on('error', () => {
     if (!closed) {
       closed = true;
+      clearInterval(heartbeatTimer);
       for (const fn of closeHandlers) fn();
     }
   });

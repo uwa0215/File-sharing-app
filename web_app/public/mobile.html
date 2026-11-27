@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
   <title>Send Signed Files — DeviceBridge</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M16 44C10 44 6 39 6 33C6 27.8 9.8 23.5 14.7 22.4C16.7 14.8 23.6 9 32 9C41.8 9 49.8 16.6 50.4 26.2C55.2 27.1 58.8 31.3 58.8 36.4C58.8 42.1 54.2 46.8 48.4 46.8H16V44Z' fill='%23ff85c0'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -851,6 +852,8 @@
       const totalBytes = files.reduce((s, f) => s + f.size, 0);
       const perFileLoaded = new Array(files.length).fill(0);
       let completed = 0;
+      let succeeded = 0;
+      let failed = 0;
       let nextIdx = 0;
       const started = performance.now();
 
@@ -877,19 +880,29 @@
             });
             perFileLoaded[i] = file.size;
             completed++;
+            succeeded++;
             update(file.name);
             addSentRow(file.name, file.size, true, Boolean(sigHeaders['x-file-signature']), '');
           } catch (err) {
             completed++;
+            failed++;
             addSentRow(file.name, file.size, false, false, err.message);
           }
         }
       }
 
       await Promise.all(Array.from({ length: Math.min(3, files.length) }, worker));
-      progressFill.style.width = '100%';
-      progressText.textContent = 'Sent ' + files.length + ' signed file(s) (' + fmtBytes(totalBytes) + ')';
-      burstSparkles();
+      progressFill.style.width = succeeded > 0 ? '100%' : '0%';
+      if (failed === 0) {
+        progressText.textContent = 'Sent ' + succeeded + ' signed file(s) (' + fmtBytes(totalBytes) + ')';
+        burstSparkles();
+      } else if (succeeded > 0) {
+        progressText.textContent = 'Sent ' + succeeded + ' file(s), ' + failed + ' failed';
+        burstSparkles();
+      } else {
+        progressText.textContent = 'Upload failed (' + failed + ' file(s))';
+        showToast('Upload failed — check connection or approval');
+      }
       fileInput.value = '';
     }
 
@@ -939,9 +952,12 @@
           burstSparkles();
           return true;
         }
+        targets.forEach((f, idx) => setTimeout(() => triggerDownload(f), idx * 350));
+        showToast('Downloading file(s) to device');
       } catch (err) {
         if (err && err.name !== 'AbortError') {
           targets.forEach((f, idx) => setTimeout(() => triggerDownload(f), idx * 350));
+          showToast('Saved to Downloads');
         }
       } finally {
         if (btnEl) {
@@ -984,6 +1000,7 @@
           img.className = 'thumb-img';
           img.src = downloadHref(f.id, true);
           img.alt = f.name;
+          img.onerror = () => img.remove();
           row.appendChild(img);
         }
 
@@ -1064,32 +1081,44 @@
       burstSparkles();
     };
 
+    let activeWs = null;
+    let wsReconnectTimer = null;
+
     function connectWs() {
+      clearTimeout(wsReconnectTimer);
+      if (activeWs) {
+        try { activeWs.onclose = null; activeWs.close(); } catch {}
+      }
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(
         proto + '//' + location.host + '/ws?role=mobile&token=' + encodeURIComponent(token) + '&session=' + encodeURIComponent(sessionKey),
       );
+      activeWs = ws;
       ws.onopen = () => {
         pillText.textContent = 'Connected';
         pill.classList.remove('offline');
       };
       ws.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
-        if (msg.type === 'welcome' || msg.type === 'session_update') {
-          if (msg.clientId) clientId = msg.clientId;
-          if (msg.sessionKey) sessionKey = msg.sessionKey;
-          if (msg.signingKeyHex !== undefined) signingKeyHex = msg.signingKeyHex;
-          if (msg.security) {
-            secState = msg.security;
-            updateGateUi();
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'welcome' || msg.type === 'session_update') {
+            if (msg.clientId) clientId = msg.clientId;
+            if (msg.sessionKey) sessionKey = msg.sessionKey;
+            if (msg.signingKeyHex !== undefined) signingKeyHex = msg.signingKeyHex;
+            if (msg.security) {
+              secState = msg.security;
+              updateGateUi();
+            }
+            if (msg.files) renderOutbox(msg.files);
           }
-          if (msg.files) renderOutbox(msg.files);
-        }
+        } catch {}
       };
       ws.onclose = () => {
-        pillText.textContent = 'Reconnecting...';
-        pill.classList.add('offline');
-        setTimeout(connectWs, 1500);
+        if (activeWs === ws) {
+          pillText.textContent = 'Reconnecting...';
+          pill.classList.add('offline');
+          wsReconnectTimer = setTimeout(connectWs, 1800);
+        }
       };
     }
 

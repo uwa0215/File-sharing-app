@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>DeviceBridge — Wireless QR Studio</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M16 44C10 44 6 39 6 33C6 27.8 9.8 23.5 14.7 22.4C16.7 14.8 23.6 9 32 9C41.8 9 49.8 16.6 50.4 26.2C55.2 27.1 58.8 31.3 58.8 36.4C58.8 42.1 54.2 46.8 48.4 46.8H16V44Z' fill='%23ff85c0'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -1271,6 +1272,12 @@
           thumb.className = 'thumb';
           thumb.src = withRoomParams('/api/desktop/received/' + encodeURIComponent(rec.id) + '?inline=1');
           thumb.alt = rec.fileName;
+          thumb.onerror = () => {
+            const fallback = document.createElement('div');
+            fallback.className = 'thumb';
+            fallback.innerHTML = fileIconSvg(rec.fileName);
+            thumb.replaceWith(fallback);
+          };
         } else {
           thumb = document.createElement('div');
           thumb.className = 'thumb';
@@ -1469,26 +1476,61 @@
       renderTransfers(st.transfers || []);
     }
 
+    async function safeFetchJson(rawUrl, options) {
+      const res = await fetch(withRoomParams(rawUrl), options);
+      if (res.status === 403 && roomId) {
+        roomId = '';
+        hostKey = '';
+        sessionStorage.removeItem('db_room_id');
+        sessionStorage.removeItem('db_host_key');
+        const refreshRes = await fetch('/api/desktop/state');
+        if (refreshRes.ok) {
+          const fresh = await refreshRes.json();
+          renderState(fresh);
+          connectWs();
+          showToast('Session refreshed — please retry');
+        }
+        return null;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || ('Request failed (' + res.status + ')'));
+        return null;
+      }
+      return data;
+    }
+
     async function updateSecurity(patch) {
-      const res = await fetch(withRoomParams('/api/desktop/security'), {
+      const data = await safeFetchJson('/api/desktop/security', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
-      renderState(await res.json());
+      if (data) renderState(data);
     }
 
     optApprove.onchange = () => updateSecurity({ requireApproval: optApprove.checked });
 
     async function shareFiles(fileList) {
-      for (const file of Array.from(fileList || [])) {
-        await fetch(withRoomParams('/api/desktop/share-file?name=' + encodeURIComponent(file.name)), {
+      const files = Array.from(fileList || []);
+      if (!files.length) return;
+      let sent = 0;
+      let failed = 0;
+      for (const file of files) {
+        const res = await fetch(withRoomParams('/api/desktop/share-file?name=' + encodeURIComponent(file.name)), {
           method: 'POST',
           body: file,
-        });
+        }).catch(() => null);
+        if (res && res.ok) sent++;
+        else failed++;
       }
       shareInput.value = '';
-      burstSparkles();
+      if (sent > 0) {
+        burstSparkles();
+        showToast(failed ? ('Shared ' + sent + ' file(s), ' + failed + ' failed') : ('Shared ' + sent + ' signed file(s) to phone'));
+      } else {
+        showToast('Could not share file(s)');
+      }
     }
 
     copyBtn.onclick = async () => {
@@ -1500,28 +1542,31 @@
     };
 
     regenBtn.onclick = async () => {
-      const res = await fetch(withRoomParams('/api/desktop/regenerate'), { method: 'POST' });
-      renderState(await res.json());
-      showToast('Fresh QR pairing session generated');
+      const data = await safeFetchJson('/api/desktop/regenerate', { method: 'POST' });
+      if (data) {
+        renderState(data);
+        showToast('Fresh QR pairing session generated');
+      }
     };
 
     reconnectBtn.onclick = async () => {
       reconnectBtn.disabled = true;
       reconnectText.textContent = '...';
-      const res = await fetch(withRoomParams('/api/desktop/reconnect-tunnel'), { method: 'POST' });
+      const data = await safeFetchJson('/api/desktop/reconnect-tunnel', { method: 'POST' });
       reconnectBtn.disabled = false;
       reconnectText.textContent = 'Refresh';
-      renderState(await res.json());
+      if (data) renderState(data);
     };
 
     autoSaveBtn.onclick = () => {
       autoSaveEnabled = !autoSaveEnabled;
       autoSaveBtn.textContent = autoSaveEnabled ? 'Auto-Save: On' : 'Auto-Save: Off';
       autoSaveBtn.className = autoSaveEnabled ? 'btn teal' : 'btn secondary';
+      showToast(autoSaveEnabled ? 'Auto-Save enabled' : 'Auto-Save disabled');
     };
 
-    openFolderBtn.onclick = () => fetch(withRoomParams('/api/desktop/open-folder'), { method: 'POST' });
-    document.getElementById('clearFinishedBtn').onclick = () => fetch(withRoomParams('/api/desktop/clear-transfers'), { method: 'POST' });
+    openFolderBtn.onclick = () => fetch(withRoomParams('/api/desktop/open-folder'), { method: 'POST' }).catch(() => {});
+    document.getElementById('clearFinishedBtn').onclick = () => fetch(withRoomParams('/api/desktop/clear-transfers'), { method: 'POST' }).catch(() => {});
 
     pickShareBtn.onclick = () => shareInput.click();
     shareDrop.onclick = () => shareInput.click();
@@ -1535,23 +1580,37 @@
     };
     function sendShareSafe(files) { shareFiles(files); }
 
+    let activeWs = null;
+    let wsReconnectTimer = null;
+
     function connectWs() {
+      clearTimeout(wsReconnectTimer);
+      if (activeWs) {
+        try { activeWs.onclose = null; activeWs.close(); } catch {}
+      }
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(proto + '//' + location.host + withRoomParams('/ws?role=desktop'));
+      activeWs = ws;
       ws.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
-        if (msg.type === 'state') renderState(msg.state);
-        if (msg.type === 'transfers') renderTransfers(msg.transfers);
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'state') renderState(msg.state);
+          if (msg.type === 'transfers') renderTransfers(msg.transfers);
+        } catch {}
       };
-      ws.onclose = () => setTimeout(connectWs, 1500);
+      ws.onclose = () => {
+        if (activeWs === ws) {
+          wsReconnectTimer = setTimeout(connectWs, 1800);
+        }
+      };
     }
 
-    fetch(withRoomParams('/api/desktop/state'))
-      .then((r) => r.json())
-      .then((st) => {
+    safeFetchJson('/api/desktop/state').then((st) => {
+      if (st) {
         renderState(st);
         connectWs();
-      });
+      }
+    });
   </script>
 </body>
 </html>

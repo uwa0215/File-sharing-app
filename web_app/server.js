@@ -172,17 +172,43 @@ function resolveCloudflaredBinary() {
   return exeName;
 }
 
+function decodeURIComponentSafe(value = '') {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return String(value || '');
+  }
+}
+
+function parseRequestUrl(req) {
+  try {
+    return new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  } catch {
+    try {
+      return new URL(req.url || '/', 'http://localhost');
+    } catch {
+      return null;
+    }
+  }
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk;
-      if (body.length > 1024 * 1024) reject(new Error('Body too large'));
+      if (body.length > 1024 * 1024) {
+        const err = new Error('Body too large');
+        err.statusCode = 413;
+        reject(err);
+      }
     });
     req.on('end', () => {
       try {
         resolve(body ? JSON.parse(body) : {});
-      } catch (err) {
+      } catch {
+        const err = new Error('Invalid JSON payload');
+        err.statusCode = 400;
         reject(err);
       }
     });
@@ -195,7 +221,7 @@ function extractMobileToken(req, urlObj) {
   return (
     urlObj.searchParams.get('token') ||
     req.headers['x-devicebridge-token'] ||
-    (match ? decodeURIComponent(match[1]) : '')
+    (match ? decodeURIComponentSafe(match[1]) : '')
   ).trim();
 }
 
@@ -586,7 +612,7 @@ function createTransferRoom({
     }
 
     if (pathname.startsWith('/api/desktop/outbox/') && req.method === 'DELETE') {
-      const id = decodeURIComponent(pathname.slice('/api/desktop/outbox/'.length));
+      const id = decodeURIComponentSafe(pathname.slice('/api/desktop/outbox/'.length));
       const item = outboxFiles.get(id);
       if (item) {
         outboxFiles.delete(id);
@@ -600,7 +626,7 @@ function createTransferRoom({
     }
 
     if (pathname.startsWith('/api/desktop/received/') && req.method === 'GET') {
-      const recId = decodeURIComponent(pathname.slice('/api/desktop/received/'.length));
+      const recId = decodeURIComponentSafe(pathname.slice('/api/desktop/received/'.length));
       const rec = transferRecords.find((r) => r.id === recId && r.savedPath);
       if (!rec || !fs.existsSync(rec.savedPath)) {
         res.writeHead(404);
@@ -704,7 +730,7 @@ function createTransferRoom({
     }
 
     if (pathname.startsWith('/api/download/') && req.method === 'GET') {
-      const id = decodeURIComponent(pathname.slice('/api/download/'.length));
+      const id = decodeURIComponentSafe(pathname.slice('/api/download/'.length));
       const shared = outboxFiles.get(id);
       if (!shared || !fs.existsSync(shared.filePath)) {
         res.writeHead(404);
@@ -1341,103 +1367,128 @@ export function createQrWebApp({
   }
 
   const server = http.createServer(async (req, res) => {
-    const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-    const pathname = urlObj.pathname;
-
-    if (pathname === '/healthz' && req.method === 'GET') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify({ ok: true, cloudMode, activeRooms: rooms.size }));
-      return;
-    }
-
-    // --- Desktop / Host UI ---
-    if (pathname === '/' && req.method === 'GET' && !urlObj.searchParams.has('token')) {
-      if (!cloudMode && !isTrueDesktopRequest(req)) {
-        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('Scan the QR code to open the mobile transfer page.');
+    try {
+      const urlObj = parseRequestUrl(req);
+      if (!urlObj) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' });
+        res.end('Bad request');
         return;
       }
-      const html = await fsp.readFile(path.join(PUBLIC_DIR, 'desktop.html'));
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      res.end(html);
-      return;
-    }
+      const pathname = urlObj.pathname;
 
-    // --- Desktop Admin / Room API Routes ---
-    if (pathname.startsWith('/api/desktop/')) {
-      if (!cloudMode) {
-        if (!isTrueDesktopRequest(req)) {
-          res.writeHead(403, { 'Content-Type': 'text/plain' });
-          res.end('Forbidden');
+      if (pathname === '/favicon.ico' && req.method === 'GET') {
+        res.writeHead(204, { 'Cache-Control': 'public, max-age=86400' });
+        res.end();
+        return;
+      }
+
+      if (pathname === '/healthz' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ ok: true, cloudMode, activeRooms: rooms.size }));
+        return;
+      }
+
+      // --- Desktop / Host UI ---
+      if (pathname === '/' && req.method === 'GET' && !urlObj.searchParams.has('token')) {
+        if (!cloudMode && !isTrueDesktopRequest(req)) {
+          res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('Scan the QR code to open the mobile transfer page.');
           return;
         }
-        await localRoom.handleDesktopApi(req, res, urlObj, pathname);
+        const html = await fsp.readFile(path.join(PUBLIC_DIR, 'desktop.html'));
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(html);
         return;
       }
 
-      const auth = resolveCloudDesktopRoom(req, urlObj);
-      if (auth.status === 'ok') {
-        await auth.room.handleDesktopApi(req, res, urlObj, pathname);
+      // --- Desktop Admin / Room API Routes ---
+      if (pathname.startsWith('/api/desktop/')) {
+        if (!cloudMode) {
+          if (!isTrueDesktopRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Forbidden');
+            return;
+          }
+          await localRoom.handleDesktopApi(req, res, urlObj, pathname);
+          return;
+        }
+
+        const auth = resolveCloudDesktopRoom(req, urlObj);
+        if (auth.status === 'ok') {
+          await auth.room.handleDesktopApi(req, res, urlObj, pathname);
+          return;
+        }
+        if (pathname === '/api/desktop/state' && req.method === 'GET' && auth.status !== 'forbidden') {
+          const freshRoom = await spawnCloudRoom();
+          await freshRoom.handleDesktopApi(req, res, urlObj, pathname);
+          return;
+        }
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Invalid or expired room credentials.' }));
         return;
       }
-      if (pathname === '/api/desktop/state' && req.method === 'GET' && auth.status !== 'forbidden') {
-        const freshRoom = await spawnCloudRoom();
-        await freshRoom.handleDesktopApi(req, res, urlObj, pathname);
+
+      // --- Mobile Token-Guarded Routes ---
+      const suppliedToken = extractMobileToken(req, urlObj);
+      const mobileRoom = tokenToRoom.get(suppliedToken);
+      if (!mobileRoom) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Invalid or expired QR link. Please rescan the QR code on the computer screen.');
         return;
       }
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: 'Invalid or expired room credentials.' }));
-      return;
+
+      await mobileRoom.handleMobileApi(req, res, urlObj, pathname);
+    } catch (err) {
+      const code = err?.statusCode || 500;
+      if (!res.headersSent) {
+        res.writeHead(code, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: err?.message || 'Internal server error' }));
+      } else {
+        res.destroy();
+      }
     }
-
-    // --- Mobile Token-Guarded Routes ---
-    const suppliedToken = extractMobileToken(req, urlObj);
-    const mobileRoom = tokenToRoom.get(suppliedToken);
-    if (!mobileRoom) {
-      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Invalid or expired QR link. Please rescan the QR code on the computer screen.');
-      return;
-    }
-
-    await mobileRoom.handleMobileApi(req, res, urlObj, pathname);
   });
 
   server.on('upgrade', async (req, socket) => {
-    const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-    if (urlObj.pathname !== '/ws') {
-      socket.destroy();
-      return;
-    }
-
-    const role = urlObj.searchParams.get('role');
-    if (role === 'desktop') {
-      if (!cloudMode) {
-        if (!isTrueDesktopRequest(req)) {
-          socket.destroy();
-          return;
-        }
-        await localRoom.handleDesktopWs(req, socket);
+    try {
+      const urlObj = parseRequestUrl(req);
+      if (!urlObj || urlObj.pathname !== '/ws') {
+        socket.destroy();
         return;
       }
 
-      const auth = resolveCloudDesktopRoom(req, urlObj);
-      if (auth.status !== 'ok') {
+      const role = urlObj.searchParams.get('role');
+      if (role === 'desktop') {
+        if (!cloudMode) {
+          if (!isTrueDesktopRequest(req)) {
+            socket.destroy();
+            return;
+          }
+          await localRoom.handleDesktopWs(req, socket);
+          return;
+        }
+
+        const auth = resolveCloudDesktopRoom(req, urlObj);
+        if (auth.status !== 'ok') {
+          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        await auth.room.handleDesktopWs(req, socket);
+        return;
+      }
+
+      const supplied = extractMobileToken(req, urlObj);
+      const mobileRoom = tokenToRoom.get(supplied);
+      if (!mobileRoom) {
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;
       }
-      await auth.room.handleDesktopWs(req, socket);
-      return;
-    }
-
-    const supplied = extractMobileToken(req, urlObj);
-    const mobileRoom = tokenToRoom.get(supplied);
-    if (!mobileRoom) {
-      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      await mobileRoom.handleMobileWs(req, socket, urlObj);
+    } catch {
       socket.destroy();
-      return;
     }
-    await mobileRoom.handleMobileWs(req, socket, urlObj);
   });
 
   return {
